@@ -1,0 +1,77 @@
+diff --git a/source/backend/opencl/core/runtime/OpenCLRuntime.cpp b/source/backend/opencl/core/runtime/OpenCLRuntime.cpp
+index 7117bad..a180f0b 100644
+--- a/source/backend/opencl/core/runtime/OpenCLRuntime.cpp
++++ b/source/backend/opencl/core/runtime/OpenCLRuntime.cpp
+@@ -9,6 +9,7 @@
+ #include "backend/opencl/core/runtime/OpenCLRuntime.hpp"
+ #include <cstdlib>
+ #include <algorithm>
++#include <chrono>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -411,6 +412,19 @@ void OpenCLRuntime::submitGemmTuneJob(const std::vector<uint32_t>& gemmSize, int
+         }
+     }
+     mGemmTuneCV.notify_one();
++
++    // Serialize with the foreground instead of overlapping it. The worker owns a
++    // private command queue and allocates its own full-size A/B/C buffers, so
++    // measuring while a step is running doubled the peak memory -- which is what
++    // killed the first run at 512x512. Waiting here measures exactly the same
++    // candidates (identical result), it just puts the enumeration on the run's
++    // critical path. The timeout only guards against a wedged worker.
++    {
++        std::unique_lock<std::mutex> doneLock(mGemmParamsMutex);
++        mGemmTuneDoneCV.wait_for(doneLock, std::chrono::seconds(300), [this] {
++            return mGemmTuneStop || (mGemmTuneJobs.empty() && !mGemmTuneBusy);
++        });
++    }
+ }
+ 
+ void OpenCLRuntime::gemmTuneWorker() {
+@@ -436,7 +450,19 @@ void OpenCLRuntime::gemmTuneWorker() {
+             }
+             job = std::move(mGemmTuneJobs.front());
+             mGemmTuneJobs.erase(mGemmTuneJobs.begin());
++            mGemmTuneBusy = true;
+         }
++        // Clears the busy flag on every exit path below -- several branches use
++        // `continue` -- and wakes the foreground that is waiting for this
++        // measurement to finish.
++        struct GemmTuneBusyGuard {
++            OpenCLRuntime* runtime;
++            ~GemmTuneBusyGuard() {
++                std::lock_guard<std::mutex> gemmLock(runtime->mGemmParamsMutex);
++                runtime->mGemmTuneBusy = false;
++                runtime->mGemmTuneDoneCV.notify_all();
++            }
++        } busyGuard{this};
+ 
+         const uint32_t m = job.gemmSize[0];
+         const uint32_t n = job.gemmSize[1];
+@@ -649,6 +675,7 @@ OpenCLRuntime::~OpenCLRuntime() {
+         mGemmTuneStop = true;
+     }
+     mGemmTuneCV.notify_all();
++    mGemmTuneDoneCV.notify_all();
+     if (mGemmTuneThread.joinable()) {
+         mGemmTuneThread.join();
+     }
+diff --git a/source/backend/opencl/core/runtime/OpenCLRuntime.hpp b/source/backend/opencl/core/runtime/OpenCLRuntime.hpp
+index c25e62c..b04045c 100644
+--- a/source/backend/opencl/core/runtime/OpenCLRuntime.hpp
++++ b/source/backend/opencl/core/runtime/OpenCLRuntime.hpp
+@@ -273,6 +273,12 @@ private:
+     std::set<std::vector<uint32_t>> mGemmTuneQueued;
+     std::thread mGemmTuneThread;
+     bool mGemmTuneStop = false;
++    // Set while the worker is measuring a job. submitGemmTuneJob() waits on
++    // mGemmTuneDoneCV until the queue is drained again, so the enumeration
++    // cannot overlap the foreground's kernels (it used to double the peak
++    // memory, which is what killed the first run at 512x512).
++    bool mGemmTuneBusy = false;
++    std::condition_variable mGemmTuneDoneCV;
+ 
+     // Speculative tasks enter at the back. If resize requests a missing key, it is moved
+     // to the front and the caller waits only for that key; unrelated builds continue later.

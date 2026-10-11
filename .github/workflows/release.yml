@@ -54,6 +54,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # MNN measures its OpenCL GEMM tile candidates on a background thread that
+      # allocates its own full-size A/B/C buffers, so the enumeration used to run
+      # concurrently with the image generation and roughly doubled the peak
+      # memory -- first runs at 512x512 died there. The patch makes
+      # submitGemmTuneJob() wait for the measurement to finish, i.e. the
+      # enumeration becomes serial with generation, with the same candidate set.
+      - name: Patch MNN (serialize OpenCL GEMM tuning)
+        run: |
+          cd app/src/main/cpp/3rdparty/MNN
+          git apply --verbose "${GITHUB_WORKSPACE}/app/src/main/cpp/patches/mnn-serialize-gemm-tuning.patch"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
