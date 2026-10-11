@@ -1,0 +1,149 @@
+name: Build and Release APK
+
+# Triggers:
+#   - pushing a tag like v3.0.0       -> builds and publishes that tag
+#   - manual run (Actions tab)        -> builds and publishes the given version
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name for the release, without the leading v (e.g. 3.0.0-alpha.6)"
+        required: true
+        default: "3.0.0-alpha.6"
+
+# Required to create the Release and upload the APK.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "28.0.13004108"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK, CMake and Ninja
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" "cmake;3.31.6"
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          # CMakePresets.json pins this path for the core (stable-diffusion) build.
+          sudo mkdir -p /data
+          sudo ln -sfn "${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" /data/android-ndk-r28
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # Optional. Point these at archives of the proprietary SDKs. Without them
+      # the job still succeeds only if the native libraries are committed to the
+      # repo (see the next step).
+      - name: Fetch QNN and Hexagon SDKs
+        env:
+          QNN_SDK_URL: ${{ secrets.QNN_SDK_URL }}
+          HEXAGON_SDK_URL: ${{ secrets.HEXAGON_SDK_URL }}
+        run: |
+          if [ -n "$QNN_SDK_URL" ]; then
+            curl -fL "$QNN_SDK_URL" -o "$RUNNER_TEMP/qnn.tar.gz"
+            mkdir -p "$RUNNER_TEMP/qnn"
+            tar xf "$RUNNER_TEMP/qnn.tar.gz" -C "$RUNNER_TEMP/qnn"
+            echo "QNN_SDK_ROOT=$RUNNER_TEMP/qnn" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$HEXAGON_SDK_URL" ]; then
+            curl -fL "$HEXAGON_SDK_URL" -o "$RUNNER_TEMP/hexagon.tar.gz"
+            mkdir -p "$RUNNER_TEMP/hexagon"
+            tar xf "$RUNNER_TEMP/hexagon.tar.gz" -C "$RUNNER_TEMP/hexagon"
+            echo "HEXAGON_SDK_ROOT=$RUNNER_TEMP/hexagon" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build native libraries
+        run: |
+          if [ -f app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so ]; then
+            echo "Native libraries are committed to the repo; skipping the native build."
+            exit 0
+          fi
+          if [ -z "$QNN_SDK_ROOT" ]; then
+            echo "::error::No native libraries in the repo and QNN_SDK_URL is not set. Either add the QNN_SDK_URL secret or commit the prebuilt libraries under app/src/main/jniLibs and app/src/main/assets."
+            exit 1
+          fi
+          ( cd app/src/main/cpp && bash build.sh )
+          if [ -n "$HEXAGON_SDK_ROOT" ]; then
+            ( cd app/src/main/cpp && bash dit/build.sh )
+          else
+            echo "::warning::HEXAGON_SDK_URL is not set; libdit_engine.so (DiT models) will be missing."
+          fi
+
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/keystore.jks"
+          else
+            # No stored keystore: make an ephemeral one so the build can sign.
+            # The resulting APK installs but cannot update a differently
+            # signed install; provide KEYSTORE_BASE64 for a stable key.
+            keytool -genkeypair -v \
+              -keystore "$GITHUB_WORKSPACE/keystore.jks" \
+              -alias localdream -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Local Dream, OU=Dev, O=LocalDream, L=City, S=State, C=CN"
+          fi
+          {
+            echo "KS_FILE=$GITHUB_WORKSPACE/keystore.jks"
+            echo "KS_PASS=${KEYSTORE_PASSWORD:-android}"
+            echo "KS_ALIAS=${KEY_ALIAS:-localdream}"
+            echo "KS_KEYPASS=${KEY_PASSWORD:-android}"
+          } >> "$GITHUB_ENV"
+
+      - name: Assemble basic release
+        run: |
+          ./gradlew --no-daemon :app:assembleBasicRelease \
+            -PRELEASE_STORE_FILE="$KS_FILE" \
+            -PRELEASE_STORE_PASSWORD="$KS_PASS" \
+            -PRELEASE_KEY_ALIAS="$KS_ALIAS" \
+            -PRELEASE_KEY_PASSWORD="$KS_KEYPASS"
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Local Dream v${{ steps.version.outputs.version }}
+          files: app/build/outputs/apk/basic/release/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true

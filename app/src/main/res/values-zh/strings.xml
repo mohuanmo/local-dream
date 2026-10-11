@@ -506,6 +506,14 @@
     <string name="model_storage_internal_hint">仅 Local Dream 可访问，卸载应用时会被删除。</string>
     <string name="model_storage_public_hint">文件管理器可见，卸载后保留。拥有“所有文件访问权限”的其他应用可直接使用这些模型，无需重新下载。需要“所有文件访问权限”。</string>
     <string name="model_storage_public_unsupported">需要 Android 11 或更高版本。</string>
+    <string name="model_storage_folder_title">模型文件夹</string>
+    <string name="model_storage_folder_hint">模型存放位置。可用系统选择器，或直接输入绝对路径，例如 /storage/emulated/0/MyModels。</string>
+    <string name="model_storage_folder_browse">选择文件夹…</string>
+    <string name="model_storage_folder_change">更改文件夹</string>
+    <string name="model_storage_folder_invalid">该文件夹无法写入。</string>
+    <string name="model_storage_folder_unresolved">该文件夹无法直接使用，请手动输入它的路径。</string>
+    <string name="model_storage_folder_moved">文件夹已更改。请执行移动，把现有模型搬过去。</string>
+    <string name="model_storage_folder_switch_first">请先切换到应用存储，再更改文件夹。</string>
     <string name="model_storage_access_lost">“所有文件访问权限”已被关闭，无法读取 Download 文件夹中的模型。</string>
     <string name="model_storage_grant">授予权限</string>
     <string name="model_storage_no_access">未授予“所有文件访问权限”</string>

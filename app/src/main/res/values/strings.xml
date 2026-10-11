@@ -517,6 +517,14 @@
     <string name="model_storage_public" translatable="false">Download/%1$s</string>
     <string name="model_storage_public_hint">Visible in file managers and kept after uninstall. Other apps with All files access can use these models without downloading them again. Needs All files access.</string>
     <string name="model_storage_public_unsupported">Needs Android 11 or newer.</string>
+    <string name="model_storage_folder_title">Model folder</string>
+    <string name="model_storage_folder_hint">Where models are kept. Use the system picker, or type an absolute path such as /storage/emulated/0/MyModels.</string>
+    <string name="model_storage_folder_browse">Choose folder…</string>
+    <string name="model_storage_folder_change">Change folder</string>
+    <string name="model_storage_folder_invalid">That folder cannot be written to.</string>
+    <string name="model_storage_folder_unresolved">This folder cannot be used directly. Type its path instead.</string>
+    <string name="model_storage_folder_moved">Folder changed. Move the models to bring the existing ones over.</string>
+    <string name="model_storage_folder_switch_first">Switch to app storage first, then change the folder.</string>
     <string name="model_storage_access_lost">All files access was turned off, so models in the Download folder cannot be read.</string>
     <string name="model_storage_grant">Grant access</string>
     <string name="model_storage_no_access">All files access was not granted</string>

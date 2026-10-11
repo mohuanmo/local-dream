@@ -1,8 +1,12 @@
 package io.github.xororz.localdream.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -19,6 +24,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.xororz.localdream.R
@@ -45,6 +52,7 @@ import io.github.xororz.localdream.data.ModelStorage.Location
 import io.github.xororz.localdream.data.ModelStorage.MoveState
 import io.github.xororz.localdream.ui.components.BlockingProgressOverlay
 import io.github.xororz.localdream.ui.components.SmoothCircularWavyProgressIndicator
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -70,9 +78,15 @@ internal fun ModelStorageSection() {
     var confirmTarget by remember { mutableStateOf<Location?>(null) }
     var confirmBytes by remember { mutableStateOf(0L) }
     var awaitingAccessFor by remember { mutableStateOf<Location?>(null) }
+    var folderDialog by remember { mutableStateOf(false) }
+    var folderInput by remember { mutableStateOf("") }
 
     val msgBusy = stringResource(R.string.model_storage_busy)
     val msgNoAccess = stringResource(R.string.model_storage_no_access)
+    val msgFolderInvalid = stringResource(R.string.model_storage_folder_invalid)
+    val msgFolderUnresolved = stringResource(R.string.model_storage_folder_unresolved)
+    val msgFolderMoved = stringResource(R.string.model_storage_folder_moved)
+    val msgFolderSwitchFirst = stringResource(R.string.model_storage_folder_switch_first)
 
     // After an unfinished move either location is a valid target: the
     // one it was headed for finishes it, the other one moves the files back.
@@ -99,13 +113,48 @@ internal fun ModelStorageSection() {
         }
     }
 
+    // System picker for the external model folder. Only the resolved path is
+    // kept; a content:// tree cannot be handed to the C++ backend.
+    val treeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        val resolved = ModelStorage.physicalPathOf(uri)
+        if (resolved != null) {
+            folderInput = resolved.absolutePath
+        } else {
+            Toast.makeText(context, msgFolderUnresolved, Toast.LENGTH_LONG).show()
+        }
+    }
+
     val accessLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) {
         val target = awaitingAccessFor
         awaitingAccessFor = null
         revision++
-        if (!ModelStorage.hasAllFilesAccess()) {
+        if (!ModelStorage.hasAllFilesAccess(context)) {
+            Toast.makeText(context, msgNoAccess, Toast.LENGTH_SHORT).show()
+        } else if (target != null && canMoveTo(target)) {
+            askToMove(target)
+        }
+    }
+
+    // Android 10 and below: WRITE_EXTERNAL_STORAGE, an ordinary runtime
+    // permission, not the All files access system-settings page.
+    val legacyPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val target = awaitingAccessFor
+        awaitingAccessFor = null
+        revision++
+        if (!granted || !ModelStorage.hasAllFilesAccess(context)) {
             Toast.makeText(context, msgNoAccess, Toast.LENGTH_SHORT).show()
         } else if (target != null && canMoveTo(target)) {
             askToMove(target)
@@ -114,12 +163,16 @@ internal fun ModelStorageSection() {
 
     fun requestAccess(target: Location?) {
         awaitingAccessFor = target
-        val launched = ModelStorage.allFilesAccessIntents(context).any { intent ->
-            runCatching { accessLauncher.launch(intent) }.isSuccess
-        }
-        if (!launched) {
-            awaitingAccessFor = null
-            Toast.makeText(context, msgNoAccess, Toast.LENGTH_SHORT).show()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val launched = ModelStorage.allFilesAccessIntents(context).any { intent ->
+                runCatching { accessLauncher.launch(intent) }.isSuccess
+            }
+            if (!launched) {
+                awaitingAccessFor = null
+                Toast.makeText(context, msgNoAccess, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            legacyPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
     }
 
@@ -130,7 +183,7 @@ internal fun ModelStorageSection() {
             return
         }
         // Either direction touches Download/LocalDream.
-        if (!ModelStorage.hasAllFilesAccess()) {
+        if (!ModelStorage.hasAllFilesAccess(context)) {
             requestAccess(target)
         } else {
             askToMove(target)
@@ -168,18 +221,53 @@ internal fun ModelStorageSection() {
                 onClick = { choose(Location.INTERNAL) },
             )
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            val supported = ModelStorage.isPublicStorageSupported()
             StorageOption(
                 title = locationLabel(Location.DOWNLOADS),
-                description = if (supported) {
-                    stringResource(R.string.model_storage_public_hint)
-                } else {
-                    stringResource(R.string.model_storage_public_unsupported)
-                },
+                description = stringResource(R.string.model_storage_public_hint),
                 selected = current == Location.DOWNLOADS,
-                enabled = supported,
+                enabled = true,
                 onClick = { choose(Location.DOWNLOADS) },
             )
+            if (ModelStorage.isPublicStorageAvailable(context)) {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (current == Location.DOWNLOADS) {
+                                // Changing the folder while the models already
+                                // sit in the old one would strand them.
+                                Toast.makeText(context, msgFolderSwitchFirst, Toast.LENGTH_LONG).show()
+                            } else {
+                                folderInput = ModelStorage.publicRoot(context).absolutePath
+                                folderDialog = true
+                            }
+                        }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.model_storage_folder_change),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = ModelStorage.publicRoot(context).absolutePath,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
             if (pending != null && moveState !is MoveState.Moving) {
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 Text(
@@ -237,12 +325,62 @@ internal fun ModelStorageSection() {
             },
         )
     }
+
+    if (folderDialog) {
+        AlertDialog(
+            onDismissRequest = { folderDialog = false },
+            title = { Text(stringResource(R.string.model_storage_folder_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.model_storage_folder_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = folderInput,
+                        onValueChange = { folderInput = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextButton(onClick = { treeLauncher.launch(null) }) {
+                        Text(stringResource(R.string.model_storage_folder_browse))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val picked = folderInput.trim()
+                    folderDialog = false
+                    if (picked.isEmpty()) return@TextButton
+                    scope.launch {
+                        val dir = File(picked)
+                        val ok = withContext(Dispatchers.IO) { ModelStorage.ensureWritable(dir) }
+                        if (ok) {
+                            ModelStorage.setPublicRoot(context, dir)
+                            revision++
+                            Toast.makeText(context, msgFolderMoved, Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, msgFolderInvalid, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun locationLabel(location: Location): String = when (location) {
-    Location.INTERNAL -> stringResource(R.string.model_storage_internal)
-    Location.DOWNLOADS -> stringResource(R.string.model_storage_public, ModelStorage.PUBLIC_FOLDER)
+private fun locationLabel(location: Location): String {
+    val context = LocalContext.current
+    return when (location) {
+        Location.INTERNAL -> stringResource(R.string.model_storage_internal)
+        Location.DOWNLOADS -> ModelStorage.publicRoot(context).absolutePath
+    }
 }
 
 @Composable

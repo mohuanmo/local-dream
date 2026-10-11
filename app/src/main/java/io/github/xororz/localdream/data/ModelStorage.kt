@@ -4,8 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -60,10 +62,14 @@ object ModelStorage {
     private const val KEY_LOCATION = "location"
     private const val KEY_MOVING_TO = "moving_to"
 
+    // Absolute path of the external root, when the user picked one other than
+    // the default Download/LocalDream.
+    private const val KEY_PUBLIC_ROOT = "public_root"
+
     // In noBackupFilesDir, see MoveJournal.
     private const val JOURNAL = "model_move_journal"
 
-    /** The folder under Download/ used by [Location.DOWNLOADS]. */
+    /** The folder under Download/ used by [Location.DOWNLOADS] by default. */
     const val PUBLIC_FOLDER = "LocalDream"
 
     // models/ and embeddings/ must stay siblings: the backend looks for
@@ -126,13 +132,60 @@ object ModelStorage {
         Location.DOWNLOADS -> Location.INTERNAL
     }
 
+    /** The default external root: `Download/LocalDream`. */
+    fun defaultPublicRoot(): File = File(
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+        PUBLIC_FOLDER,
+    )
+
+    /**
+     * The external root in use. `Download/LocalDream` unless the user picked
+     * another folder ([setPublicRoot]). The models live under it exactly as
+     * under [Location.INTERNAL].
+     */
+    fun publicRoot(context: Context): File =
+        prefs(context).getString(KEY_PUBLIC_ROOT, null)?.let { File(it) } ?: defaultPublicRoot()
+
+    /**
+     * Points [Location.DOWNLOADS] at [root]. Only the path is stored; the
+     * caller moves the models afterwards, exactly as when switching location.
+     */
+    fun setPublicRoot(context: Context, root: File) {
+        prefs(context).edit(commit = true) { putString(KEY_PUBLIC_ROOT, root.absolutePath) }
+    }
+
+    /**
+     * The real directory behind a folder picked with
+     * [Intent.ACTION_OPEN_DOCUMENT_TREE], or null when the provider is not
+     * the file system and cannot be mapped. The C++ backend loads models by
+     * path, so a `content://` tree has to become a directory under
+     * `/storage` for inference to work at all.
+     *
+     * The document id of the built-in storage provider is
+     * `<volume>:<path>`, e.g. `primary:Download/LocalDream` or
+     * `1A2B-3C4D:MyModels`, and `primary` is the emulated internal storage.
+     */
+    fun physicalPathOf(treeUri: Uri): File? = runCatching {
+        val parts = DocumentsContract.getTreeDocumentId(treeUri).split(":", limit = 2)
+        val volume = parts[0]
+        val relative = parts.getOrNull(1).orEmpty()
+        val base = if (volume.equals("primary", ignoreCase = true)) {
+            Environment.getExternalStorageDirectory()
+        } else {
+            File("/storage/$volume")
+        }
+        File(base, relative)
+    }.getOrNull()
+
+    /** Creates [dir] if needed and reports whether it can be written to. */
+    fun ensureWritable(dir: File): Boolean = runCatching {
+        (dir.isDirectory || dir.mkdirs()) && dir.canWrite()
+    }.getOrDefault(false)
+
     fun rootFor(context: Context, location: Location): File = when (location) {
         Location.INTERNAL -> context.filesDir
 
-        Location.DOWNLOADS -> File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            PUBLIC_FOLDER,
-        )
+        Location.DOWNLOADS -> publicRoot(context)
     }
 
     fun root(context: Context): File = rootFor(context, location(context))
@@ -160,9 +213,15 @@ object ModelStorage {
      * because Google Play restricts it. Fixed per build, so asked once.
      */
     fun isPublicStorageAvailable(context: Context): Boolean = publicAvailable ?: runCatching {
-        context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+        val declared = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
             .requestedPermissions.orEmpty()
-            .contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        // Android 11+ needs All files access, declared in the GitHub build
+        // only. Below that the legacy WRITE_EXTERNAL_STORAGE permission is
+        // enough, and every flavor declares it (main manifest).
+        declared.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE) ||
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
+                declared.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE))
     }.getOrDefault(false).also { publicAvailable = it }
 
     // A build without the permission still shows the choice if models are
@@ -170,14 +229,38 @@ object ModelStorage {
     fun isChoiceShown(context: Context): Boolean = isPublicStorageAvailable(context) ||
         location(context) == Location.DOWNLOADS
 
-    fun isPublicStorageSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    /**
+     * Whether the Download/LocalDream option can be offered. No longer a
+     * version check: shared storage is writable on every supported release
+     * (minSdk 28), through All files access from Android 11 and the legacy
+     * WRITE_EXTERNAL_STORAGE grant below it (see [hasAllFilesAccess]).
+     */
+    fun isPublicStorageSupported(): Boolean = true
 
-    fun hasAllFilesAccess(): Boolean = isPublicStorageSupported() &&
-        // Throws when no primary volume is mounted; no volume is no access.
-        runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
+    /**
+     * Whether this app may read and write `Download/LocalDream`.
+     *
+     * Android 11+ (API 30) has no ordinary permission for this and uses All
+     * files access instead. Older releases write shared storage with the
+     * legacy WRITE_EXTERNAL_STORAGE runtime permission, which the manifest
+     * asks for up to API 29 and `requestLegacyExternalStorage="true"` keeps
+     * working on Android 10.
+     */
+    fun hasAllFilesAccess(context: Context): Boolean = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Throws when no primary volume is mounted; no volume is no access.
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }.getOrDefault(false)
 
-    /** Download/LocalDream is selected but All files access has been turned off since. */
-    fun isAccessLost(context: Context): Boolean = location(context) == Location.DOWNLOADS && !hasAllFilesAccess()
+    /** Download/LocalDream is selected but the storage permission has been turned off since. */
+    fun isAccessLost(context: Context): Boolean =
+        location(context) == Location.DOWNLOADS && !hasAllFilesAccess(context)
 
     /**
      * All files access when it changed since the last call while models live in
@@ -190,7 +273,7 @@ object ModelStorage {
             seenAccess = null
             return null
         }
-        val now = hasAllFilesAccess()
+        val now = hasAllFilesAccess(context)
         val before = seenAccess
         seenAccess = now
         val changed = if (before == null) !now else before != now
@@ -294,7 +377,7 @@ object ModelStorage {
 
     private fun move(context: Context, to: Location) {
         // Either direction reads or writes Download/LocalDream.
-        if (!hasAllFilesAccess()) throw IOException(context.getString(R.string.model_storage_no_access))
+        if (!hasAllFilesAccess(context)) throw IOException(context.getString(R.string.model_storage_no_access))
 
         val from = other(to)
         val src = rootFor(context, from)
@@ -367,7 +450,7 @@ object ModelStorage {
         if (taken.isNotEmpty()) {
             val label = when (to) {
                 Location.INTERNAL -> context.getString(R.string.model_storage_internal)
-                Location.DOWNLOADS -> context.getString(R.string.model_storage_public, PUBLIC_FOLDER)
+                Location.DOWNLOADS -> publicRoot(context).absolutePath
             }
             throw IOException(context.getString(R.string.model_storage_conflict, label, taken.joinToString()))
         }
