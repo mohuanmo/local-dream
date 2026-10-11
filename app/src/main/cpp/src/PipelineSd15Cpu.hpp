@@ -249,6 +249,11 @@ class PipelineSd15Cpu : public Pipeline {
     opts.use_opencl = req.use_opencl;
     opts.stage = stage;
     opts.width = req.width;
+    // gpu_tuning stays at MnnSessionOptions' default (NORMAL). WIDE enumerates
+    // a markedly larger GEMM candidate set, and the GEMM tuner enqueues all of
+    // it at once, which is what pushed ~512x512 runs into OOM at the end of a
+    // pass. Put this back to MNN_GPU_TUNING_WIDE to trade safety for a little
+    // more speed.
     if (req.use_opencl) {
       auto cache_dir = ensureCacheDir(model_dir_);
       // The memory-mode tag keeps the IMAGE and BUFFER builds from sharing a

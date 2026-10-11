@@ -61,6 +61,9 @@ class BackendService : Service() {
     companion object {
         private const val TAG = "BackendService"
 
+        // Printed once per kernel by MNN's OpenCL LWS tuner.
+        private const val TUNING_KERNEL_LINE = "lws tune res"
+
         const val RUNTIME_DIR = "runtime_libs"
         private const val RUNTIME_VERSION = "qnn_2_50_0_260828"
         private const val RUNTIME_VERSION_FILE = ".runtime_version"
@@ -125,6 +128,13 @@ class BackendService : Service() {
             // host mode's /status so a controller only declares Ready once the
             // backend matches its full config, not just the model id.
             val _servingResolution = MutableStateFlow<Pair<Int, Int>?>(null)
+
+            // Kernels the live backend has enumerated so far. MNN exposes no
+            // tuning-progress API, but its OpenCL tuner prints one
+            // "lws tune res <kernel>" line per kernel it tunes, so counting
+            // those lines in the process output gives a real counter that works
+            // even on a first run, with no history to estimate from.
+            val _tuningKernelCount = MutableStateFlow(0)
         }
 
         val backendState: StateFlow<BackendState> = StateHolder._backendState
@@ -132,6 +142,17 @@ class BackendService : Service() {
         val servingModelId: StateFlow<String?> = StateHolder._servingModelId
 
         val servingResolution: StateFlow<Pair<Int, Int>?> = StateHolder._servingResolution
+
+        /** Kernels enumerated by the live backend (see StateHolder). */
+        val tuningKernelCount: StateFlow<Int> = StateHolder._tuningKernelCount
+
+        /**
+         * Restarts the enumeration counter. Called when a tuning pass begins, so
+         * the number the UI shows belongs to the pass the user is waiting on.
+         */
+        fun resetTuningKernelCount() {
+            StateHolder._tuningKernelCount.value = 0
+        }
 
         private fun updateState(state: BackendState) {
             StateHolder._backendState.value = state
@@ -686,6 +707,12 @@ class BackendService : Service() {
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
                         Log.i(TAG, "Backend: $line")
+                        // MNN's OpenCL tuner logs one of these per tuned kernel;
+                        // count them so the UI can show live enumeration progress.
+                        if (line?.contains(TUNING_KERNEL_LINE) == true) {
+                            StateHolder._tuningKernelCount.value =
+                                StateHolder._tuningKernelCount.value + 1
+                        }
                     }
                 }
                 proc.waitFor()

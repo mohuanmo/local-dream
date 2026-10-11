@@ -468,6 +468,10 @@ class BackgroundGenerationService : Service() {
                                     // measurement above and the UI, which keeps
                                     // the indicator up until the next progress).
                                     if (message.optBoolean("started", true)) {
+                                        // The counter lives with the backend
+                                        // process (it counts MNN's per-kernel
+                                        // log lines); restart it for this pass.
+                                        BackendService.resetTuningKernelCount()
                                         val stage = message.optString("stage")
                                         val width = message.optInt("width")
                                         // One estimate per stage and resolution:

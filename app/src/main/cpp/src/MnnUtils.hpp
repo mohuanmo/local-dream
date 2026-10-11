@@ -13,6 +13,10 @@
 #include <string>
 #include <system_error>
 
+#if defined(__ANDROID__) || defined(__linux__)
+#include <malloc.h>
+#endif
+
 // Returns "{model_dir}/cache", creating it if needed. Returns "" when
 // model_dir is empty or directory creation fails; callers must treat that
 // as "caching disabled for this run".
@@ -117,7 +121,25 @@ struct MnnSessionOptions {
   int num_threads = 4;
   std::string stage;       // label for tuning notifications ("" = none)
   int width = 0;           // resolution the session is created for
+  // MNN OpenCL tuning level. NORMAL still enumerates (LWS + GEMM tuning), but
+  // WIDE additionally grows the GEMM candidate list, and the GEMM tuner
+  // enqueues *every* candidate at once (OpenCLGemmTune.cpp's
+  // measureGemmTuneCandidates) -- unlike the LWS tuner, which flushes every
+  // kTuneBatch=32 precisely because an unbounded batch "would sit on driver
+  // resources". So WIDE's peak scales with the candidate count, which is what
+  // made ~512x512 runs die at the end of a pass. Upstream ships FAST (which
+  // skips GEMM tuning entirely); NORMAL keeps the tuning without the blow-up.
+  int gpu_tuning = MNN_GPU_TUNING_NORMAL;
 };
+
+// Hands the native heap's free pages back to the OS. The enumeration pass peaks
+// far above steady state, so anything released by the previous phase (CLIP, the
+// UNet session, the cached preview) is worth returning before it starts.
+inline void mnnPurgeHeap() {
+#ifdef M_PURGE
+  mallopt(M_PURGE, 0);
+#endif
+}
 
 // Creates a session with the standard pipeline configuration. The interpreter
 // keeps no reference to the local configs after createSession returns.
@@ -136,13 +158,11 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
                std::filesystem::file_size(opts.cache_file, ec) == 0;
     }
     config.type = MNN_FORWARD_OPENCL;
-    // WIDE tuning selects better kernels than upstream's FAST, at the cost of a
-    // slower FIRST run per shape; the result is persisted via cache_file, so
-    // later runs pay it once.
+    // Tuning level comes from the caller; see MnnSessionOptions::gpu_tuning.
 #if SDCORE_GPU_MEMORY_IMAGE
-    config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
+    config.mode = MNN_GPU_MEMORY_IMAGE | opts.gpu_tuning;
 #else
-    config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_WIDE;
+    config.mode = MNN_GPU_MEMORY_BUFFER | opts.gpu_tuning;
 #endif
     backendConfig.precision = MNN::BackendConfig::Precision_Low;
   } else {
@@ -159,6 +179,7 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
   config.backendConfig = &backendConfig;
   if (tuning && mnnTuningNotify())
     mnnTuningNotify()(opts.stage, opts.width, true);
+  if (tuning) mnnPurgeHeap();
   MNN::Session *session = interpreter->createSession(config);
   if (tuning && mnnTuningNotify())
     mnnTuningNotify()(opts.stage, opts.width, false);

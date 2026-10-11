@@ -380,6 +380,10 @@ fun ModelRunScreen(
     // Start time and learned duration of the pass, for the ETA-derived bar.
     var tuningStartedAt by remember { mutableStateOf(0L) }
     var tuningExpectedMs by remember { mutableStateOf(0L) }
+    // Kernels enumerated so far in this pass. Fed by the backend process, which
+    // counts MNN's per-kernel log lines, so it is meaningful even on the very
+    // first run, when there is no learned duration to estimate from.
+    val tuningKernelCount by BackendService.tuningKernelCount.collectAsState()
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingBackend by remember { mutableStateOf(true) }
 
@@ -2508,6 +2512,7 @@ fun ModelRunScreen(
                                     stringResource(
                                         R.string.tuning_gpu_kernels_pct,
                                         tuningIndex,
+                                        tuningKernelCount,
                                         (fraction * 100).toInt(),
                                     ),
                                     style = MaterialTheme.typography.bodyMedium,
@@ -2529,7 +2534,11 @@ fun ModelRunScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                                 Text(
-                                    stringResource(R.string.tuning_gpu_kernels, tuningIndex),
+                                    stringResource(
+                                        R.string.tuning_gpu_kernels_count,
+                                        tuningIndex,
+                                        tuningKernelCount,
+                                    ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
