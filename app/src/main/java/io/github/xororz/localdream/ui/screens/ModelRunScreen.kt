@@ -374,6 +374,8 @@ fun ModelRunScreen(
     // Non-null while OpenCL kernels for this run are being enumerated; the
     // progress card shows an indeterminate bar with this label instead.
     var tuningStage by remember { mutableStateOf<String?>(null) }
+    // 1-based index of the enumeration pass in progress (shown as a counter).
+    var tuningIndex by remember { mutableStateOf(0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingBackend by remember { mutableStateOf(true) }
 
@@ -1548,6 +1550,7 @@ fun ModelRunScreen(
                 }
                 progress = state.progress
                 tuningStage = state.tuningStage
+                tuningIndex = state.tuningIndex
                 isRunning = true
                 state.intermediateImage?.let { intermediateBitmap = it }
             }
@@ -1560,6 +1563,7 @@ fun ModelRunScreen(
                     state.seed?.let { returnedSeed = it }
                     progress = 0f
                     tuningStage = null
+                    tuningIndex = 0
 
                     val genTime = generationStartTime?.let { startTime ->
                         val endTime = System.currentTimeMillis()
@@ -1680,6 +1684,7 @@ fun ModelRunScreen(
                 isRunning = false
                 progress = 0f
                 tuningStage = null
+                tuningIndex = 0
                 generationStartTime = null
                 pendingUltrafix = false
             }
@@ -1688,6 +1693,7 @@ fun ModelRunScreen(
                 isRunning = false
                 progress = 0f
                 tuningStage = null
+                tuningIndex = 0
             }
         }
     }
@@ -2483,7 +2489,7 @@ fun ModelRunScreen(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Text(
-                                stringResource(R.string.tuning_gpu_kernels),
+                                stringResource(R.string.tuning_gpu_kernels, tuningIndex),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

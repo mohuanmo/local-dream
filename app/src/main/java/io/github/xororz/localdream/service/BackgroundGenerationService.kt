@@ -103,6 +103,9 @@ class BackgroundGenerationService : Service() {
             // enumerated (tuned). Progress is reused so every existing
             // "is running" check keeps working; only the UI reads this label.
             val tuningStage: String? = null,
+            // 1-based index of the enumeration pass in progress. MNN exposes no
+            // per-kernel progress, so this counts passes (one per model stage).
+            val tuningIndex: Int = 0,
         ) : GenerationState()
 
         data class Complete(val bitmap: Bitmap, val seed: Long?) : GenerationState()
@@ -287,6 +290,8 @@ class BackgroundGenerationService : Service() {
         // Set once the complete event is fully handled; a socket teardown
         // racing the service shutdown after that point is not an error.
         var completed = false
+        // 1-based count of OpenCL enumeration passes seen in this request.
+        var tuningPass = 0
         try {
             updateState(GenerationState.Progress(0f))
 
@@ -431,11 +436,13 @@ class BackgroundGenerationService : Service() {
                                 // real diffusion progress event below.
                                 "tuning" -> {
                                     if (message.optBoolean("started", true)) {
+                                        tuningPass += 1
                                         updateState(
                                             GenerationState.Progress(
                                                 0f,
                                                 null,
                                                 message.optString("stage"),
+                                                tuningPass,
                                             ),
                                         )
                                     }
