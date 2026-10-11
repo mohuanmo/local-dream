@@ -763,6 +763,37 @@ class BackendService : Service() {
     }
 
     /**
+     * Image (texture) memory asks the driver for one contiguous image per
+     * tensor. A 448x448 SD15 UNet activation needs a 6272x6272 one -- roughly
+     * 300 MB -- which Adreno 618 refuses with CL_OUT_OF_RESOURCES; MNN then
+     * segfaults instead of failing cleanly ("Can't run session because not
+     * resized"). So a crash while the image library is loaded is treated as a
+     * signal to go back to buffer memory.
+     *
+     * Returns a note to append to the error, or null when nothing changed.
+     */
+    private fun fallBackFromImageMemory(exitCode: Int): String? {
+        if (exitCode <= 128) return null
+        if (serving?.memImage != true) return null
+        getSharedPreferences("app_prefs", MODE_PRIVATE)
+            .edit()
+            .putBoolean(NativeCore.PREF_MEMORY_IMAGE, false)
+            .apply()
+        // The failed pass still wrote a tuning cache (MNN updates it after the
+        // allocation error), and loading a cache tuned against a session that
+        // never ran is worse than re-tuning.
+        runCatching {
+            val modelId = servingModelId.value ?: return@runCatching
+            val cacheDir = File(File(Model.getModelsDir(this), modelId), "cache")
+            cacheDir.listFiles { f: File -> f.name.contains(".mnnc.img.") }?.forEach { f ->
+                if (f.delete()) Log.i(TAG, "dropped stale image-mode tuning cache: ${f.name}")
+            }
+        }
+        Log.w(TAG, "image memory crashed (exit $exitCode); switched to buffer memory")
+        return getString(R.string.image_memory_fallback)
+    }
+
+    /**
      * Turns waitFor()'s code into something actionable. A code above 128 means
      * the process was killed by a signal, and which signal decides whether this
      * was the GPU driver (SIGSEGV) or the system reclaiming memory (SIGKILL).
@@ -829,9 +860,11 @@ class BackendService : Service() {
                 // Report why, not just that: a signal (SIGSEGV / SIGKILL) is the
                 // difference between "the GPU driver died" and "we ran out of
                 // memory", and the user only ever sees this string.
+                val reason = describeBackendExit(exitCode)
+                val fallback = fallBackFromImageMemory(exitCode)
                 updateState(
                     BackendState.Error(
-                        describeBackendExit(exitCode),
+                        if (fallback == null) reason else "$reason\n$fallback",
                         servingModelId.value,
                     ),
                 )

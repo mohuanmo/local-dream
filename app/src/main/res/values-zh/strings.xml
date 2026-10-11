@@ -42,6 +42,7 @@
     <string name="signal_sigkill">SIGKILL，通常是被系统因内存不足终止</string>
     <string name="signal_sigsegv">SIGSEGV（非法内存访问）</string>
     <string name="backend_log_at">后端日志：%1$s</string>
+    <string name="image_memory_fallback">图像内存（OpenCL image）在本次运行中分配显存失败，已自动切回缓冲模式（设置中可再手动开启）。</string>
     <string name="log_saved">已保存到 %1$s</string>
     <string name="log_save_failed">日志保存失败</string>
     <string name="no_logs_captured">未收集到日志</string>

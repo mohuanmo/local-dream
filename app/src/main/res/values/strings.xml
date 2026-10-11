@@ -44,6 +44,7 @@
     <string name="signal_sigkill">SIGKILL, usually the system reclaiming memory</string>
     <string name="signal_sigsegv">SIGSEGV (invalid memory access)</string>
     <string name="backend_log_at">Backend log: %1$s</string>
+    <string name="image_memory_fallback">Image memory could not be allocated for this run; switched back to buffer memory (you can re-enable it in Settings).</string>
     <string name="log_saved">Saved to %1$s</string>
     <string name="log_save_failed">Failed to save log</string>
     <string name="no_logs_captured">No logs were captured</string>
