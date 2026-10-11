@@ -3,6 +3,18 @@ name: Build and Release APK
 # Triggers:
 #   - pushing a tag like v3.0.0       -> builds and publishes that tag
 #   - manual run (Actions tab)        -> builds and publishes the given version
+#
+# Native: this workflow builds libstable_diffusion_core.so FROM SOURCE (so
+# edits under app/src/main/cpp take effect), then stages the rest of the
+# native bundle (libdit_engine.so + qnn/dit assets) from the "native-bundle"
+# release. Building the DiT engine would additionally need the Hexagon SDK;
+# it is unchanged here, so the prebuilt copy is reused and Hexagon is not
+# required. Set the manual switch "rebuild_native" to false to skip the
+# source build and just package the prebuilt bundle as before.
+#
+# The QNN SDK (QAIRT) is fetched straight from Qualcomm's public software
+# center URL -- no account and no self-hosted archive needed. The version is
+# pinned in QNN_VERSION below and must match app/src/main/cpp/CMakeLists.txt.
 on:
   push:
     tags:
@@ -13,6 +25,10 @@ on:
         description: "Version name for the release, without the leading v (e.g. 3.0.0-alpha.6)"
         required: true
         default: "3.0.0-alpha.6"
+      rebuild_native:
+        description: "Rebuild libstable_diffusion_core.so from source (downloads the QNN SDK)"
+        type: boolean
+        default: true
 
 # Required to create the Release and upload the APK.
 permissions:
@@ -23,6 +39,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: "28.0.13004108"
+      # Must match the QNN SDK revision CMakeLists.txt is written against.
+      QNN_VERSION: "2.50.0.260828"
+      # True for tag pushes, and for manual runs with the switch on.
+      REBUILD_NATIVE: ${{ github.event_name != 'workflow_dispatch' || inputs.rebuild_native }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,17 +75,23 @@ jobs:
           yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
           "$SDKMGR" --list_installed 2>/dev/null | head -20 || true
 
-      # Only needed when the native bundle is unavailable and the libraries are
-      # built here. Kept non-fatal so a missing package never fails the job.
-      - name: Install NDK and CMake
-        continue-on-error: true
+      # NDK + CMake + Ninja are needed by the source build; Rust is required by
+      # the tokenizers-cpp submodule (it builds a Rust libtokenizers for the
+      # Android target).
+      - name: Install NDK, CMake, Ninja and Rust
+        if: env.REBUILD_NATIVE == 'true'
         run: |
-          "${SDKMGR:-sdkmanager}" --install "ndk;${NDK_VERSION}" "cmake;3.31.6" || true
-          sudo apt-get update && sudo apt-get install -y ninja-build || true
-          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          "$SDKMGR" --install "ndk;${NDK_VERSION}" "cmake;3.31.6"
+          sudo apt-get update
+          sudo apt-get install -y ninja-build unzip
           # CMakePresets.json pins this path for the core (stable-diffusion) build.
           sudo mkdir -p /data
           sudo ln -sfn "${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" /data/android-ndk-r28
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          rustup toolchain install stable --profile minimal || true
+          rustup default stable || true
+          rustup target add aarch64-linux-android || true
+          rustc --version || true
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -76,63 +102,58 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-
 
-      # Optional. Point these at archives of the proprietary SDKs. Without them
-      # the job still succeeds only if the native libraries are committed to the
-      # repo (see the next step).
-      - name: Fetch QNN and Hexagon SDKs
-        env:
-          QNN_SDK_URL: ${{ secrets.QNN_SDK_URL }}
-          HEXAGON_SDK_URL: ${{ secrets.HEXAGON_SDK_URL }}
-        run: |
-          if [ -n "$QNN_SDK_URL" ]; then
-            curl -fL "$QNN_SDK_URL" -o "$RUNNER_TEMP/qnn.tar.gz"
-            mkdir -p "$RUNNER_TEMP/qnn"
-            tar xf "$RUNNER_TEMP/qnn.tar.gz" -C "$RUNNER_TEMP/qnn"
-            echo "QNN_SDK_ROOT=$RUNNER_TEMP/qnn" >> "$GITHUB_ENV"
-          fi
-          if [ -n "$HEXAGON_SDK_URL" ]; then
-            curl -fL "$HEXAGON_SDK_URL" -o "$RUNNER_TEMP/hexagon.tar.gz"
-            mkdir -p "$RUNNER_TEMP/hexagon"
-            tar xf "$RUNNER_TEMP/hexagon.tar.gz" -C "$RUNNER_TEMP/hexagon"
-            echo "HEXAGON_SDK_ROOT=$RUNNER_TEMP/hexagon" >> "$GITHUB_ENV"
-          fi
-
-      # Gets the native libraries into app/src/main/{jniLibs,assets}. Order:
-      #   1. already committed to the repo
-      #   2. a prebuilt bundle attached to a release (default: the
-      #      "native-bundle" release of this repository)
-      #   3. built here from the proprietary QNN/Hexagon SDKs, when provided
-      - name: Provide native libraries
+      # Prebuilt libdit_engine.so plus the qnn/dit assets and licenses. The
+      # core library is overwritten below when rebuilding from source.
+      - name: Stage prebuilt native bundle
         env:
           NATIVE_BUNDLE_URL: ${{ secrets.NATIVE_BUNDLE_URL }}
         run: |
-          if [ -f app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so ]; then
-            echo "Native libraries are committed to the repo; nothing to do."
-            exit 0
-          fi
-
           url="${NATIVE_BUNDLE_URL:-https://github.com/${{ github.repository }}/releases/download/native-bundle/native-bundle.tar.gz}"
-          echo "Fetching prebuilt native libraries from: $url"
-          if curl -fsSL "$url" -o "$RUNNER_TEMP/native-bundle.tar.gz"; then
-            tar xzf "$RUNNER_TEMP/native-bundle.tar.gz" -C app/src/main
-            echo "Staged native libraries:"
-            ls -la app/src/main/jniLibs/arm64-v8a
-            exit 0
-          fi
+          echo "Fetching prebuilt native bundle from: $url"
+          curl -fsSL --retry 3 "$url" -o "$RUNNER_TEMP/native-bundle.tar.gz"
+          tar xzf "$RUNNER_TEMP/native-bundle.tar.gz" -C app/src/main
+          ls -la app/src/main/jniLibs/arm64-v8a
 
-          if [ -n "$QNN_SDK_ROOT" ]; then
-            echo "No bundle; building native libraries from the SDKs."
-            ( cd app/src/main/cpp && bash build.sh )
-            if [ -n "$HEXAGON_SDK_ROOT" ]; then
-              ( cd app/src/main/cpp && bash dit/build.sh )
-            else
-              echo "::warning::HEXAGON_SDK_URL is not set; libdit_engine.so (DiT models) will be missing."
-            fi
-            exit 0
-          fi
+      - name: Download QNN SDK
+        if: env.REBUILD_NATIVE == 'true'
+        run: |
+          url="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QNN_VERSION}/v${QNN_VERSION}.zip"
+          echo "Downloading QNN SDK ${QNN_VERSION} from $url"
+          curl -fL --retry 3 --retry-delay 5 "$url" -o "$RUNNER_TEMP/qnn.zip"
+          # Only the pieces the core build touches: headers, aarch64 + Hexagon
+          # stub/skel libs, the SampleApp sources and the licence files. Keeps
+          # the extract small enough for the runner's disk.
+          rel="qairt/${QNN_VERSION}"
+          unzip -q "$RUNNER_TEMP/qnn.zip" \
+            "${rel}/include/*" \
+            "${rel}/lib/aarch64-android/*" \
+            "${rel}/lib/hexagon-v68/unsigned/*" \
+            "${rel}/lib/hexagon-v69/unsigned/*" \
+            "${rel}/lib/hexagon-v73/unsigned/*" \
+            "${rel}/lib/hexagon-v75/unsigned/*" \
+            "${rel}/lib/hexagon-v79/unsigned/*" \
+            "${rel}/lib/hexagon-v81/unsigned/*" \
+            "${rel}/examples/QNN/SampleApp/SampleApp/*" \
+            "${rel}/LICENSE.pdf" \
+            "${rel}/NOTICE.txt" \
+            "${rel}/QNN_NOTICE.txt" \
+            -d "$RUNNER_TEMP/qnn" || true
+          rm -f "$RUNNER_TEMP/qnn.zip"
+          root="$RUNNER_TEMP/qnn/${rel}"
+          # Fail loudly if the SDK layout ever changes, instead of building a
+          # broken core library from a half-extracted SDK.
+          test -d "$root/include/QNN" || { echo "::error::QNN SDK headers missing under $root/include/QNN"; exit 1; }
+          test -f "$root/lib/aarch64-android/libQnnHtp.so" || { echo "::error::QNN aarch64 libs missing under $root/lib/aarch64-android"; exit 1; }
+          echo "QNN_SDK_ROOT=$root" >> "$GITHUB_ENV"
+          ls "$root"
 
-          echo "::error::No native libraries: the bundle could not be downloaded and no QNN_SDK_URL is set."
-          exit 1
+      - name: Build libstable_diffusion_core.so
+        if: env.REBUILD_NATIVE == 'true'
+        run: |
+          ( cd app/src/main/cpp && bash build.sh )
+          echo "Rebuilt core library:"
+          ls -la app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so
+          sha256sum app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so
 
       - name: Prepare signing keystore
         env:
