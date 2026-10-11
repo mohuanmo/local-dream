@@ -121,15 +121,15 @@ struct MnnSessionOptions {
   int num_threads = 4;
   std::string stage;       // label for tuning notifications ("" = none)
   int width = 0;           // resolution the session is created for
-  // MNN OpenCL tuning level. NORMAL still enumerates (LWS + GEMM tuning), but
-  // WIDE additionally grows the GEMM candidate list, and the GEMM tuner
-  // enqueues *every* candidate at once (OpenCLGemmTune.cpp's
-  // measureGemmTuneCandidates) -- unlike the LWS tuner, which flushes every
-  // kTuneBatch=32 precisely because an unbounded batch "would sit on driver
-  // resources". So WIDE's peak scales with the candidate count, which is what
-  // made ~512x512 runs die at the end of a pass. Upstream ships FAST (which
-  // skips GEMM tuning entirely); NORMAL keeps the tuning without the blow-up.
-  int gpu_tuning = MNN_GPU_TUNING_NORMAL;
+  // MNN OpenCL tuning level, kept configurable so it can be A/B'd per stage.
+  //
+  // WIDE (MNN's default, and what we ship) measures wideXgemmPool(): 14 curated
+  // GEMM combinations. NORMAL instead generates the cartesian product of the
+  // tile parameters and prunes it to the 16 closest to the heuristic
+  // preference. The two measure a comparable number of candidates, so there is
+  // no memory argument for one over the other -- WIDE is simply the curated
+  // pool. FAST, which upstream shipped, skips GEMM tuning entirely (LWS only).
+  int gpu_tuning = MNN_GPU_TUNING_WIDE;
 };
 
 // Hands the native heap's free pages back to the OS. The enumeration pass peaks
