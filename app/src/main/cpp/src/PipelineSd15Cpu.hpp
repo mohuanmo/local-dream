@@ -247,6 +247,8 @@ class PipelineSd15Cpu : public Pipeline {
                                    const char *stage) const {
     MnnSessionOptions opts;
     opts.use_opencl = req.use_opencl;
+    opts.stage = stage;
+    opts.width = req.width;
     if (req.use_opencl) {
       auto cache_dir = ensureCacheDir(model_dir_);
       opts.cache_file = (cache_dir.empty() ? model_dir_ : cache_dir) + "/" +

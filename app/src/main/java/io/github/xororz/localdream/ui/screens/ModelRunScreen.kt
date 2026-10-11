@@ -23,6 +23,10 @@ import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVis
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
@@ -367,6 +371,9 @@ fun ModelRunScreen(
     var returnedSeed by remember { mutableStateOf<Long?>(null) }
     var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    // Non-null while OpenCL kernels for this run are being enumerated; the
+    // progress card shows an indeterminate bar with this label instead.
+    var tuningStage by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingBackend by remember { mutableStateOf(true) }
 
@@ -1540,6 +1547,7 @@ fun ModelRunScreen(
                     generationStartTime = System.currentTimeMillis()
                 }
                 progress = state.progress
+                tuningStage = state.tuningStage
                 isRunning = true
                 state.intermediateImage?.let { intermediateBitmap = it }
             }
@@ -1551,6 +1559,7 @@ fun ModelRunScreen(
 
                     state.seed?.let { returnedSeed = it }
                     progress = 0f
+                    tuningStage = null
 
                     val genTime = generationStartTime?.let { startTime ->
                         val endTime = System.currentTimeMillis()
@@ -1670,6 +1679,7 @@ fun ModelRunScreen(
                 errorMessage = state.message
                 isRunning = false
                 progress = 0f
+                tuningStage = null
                 generationStartTime = null
                 pendingUltrafix = false
             }
@@ -1677,6 +1687,7 @@ fun ModelRunScreen(
             else -> {
                 isRunning = false
                 progress = 0f
+                tuningStage = null
             }
         }
     }
@@ -2453,15 +2464,40 @@ fun ModelRunScreen(
                             },
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        SmoothLinearWavyProgressIndicator(
-                            progress = progress,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            "${(progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        if (tuningStage != null) {
+                            // OpenCL kernel enumeration: no percentage is
+                            // available, so sweep the same bar while the pass
+                            // runs; layout is otherwise unchanged.
+                            val transition = rememberInfiniteTransition(label = "tuning")
+                            val sweep by transition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 1f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1200),
+                                    repeatMode = RepeatMode.Reverse,
+                                ),
+                                label = "tuningSweep",
+                            )
+                            SmoothLinearWavyProgressIndicator(
+                                progress = sweep,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                stringResource(R.string.tuning_gpu_kernels),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            SmoothLinearWavyProgressIndicator(
+                                progress = progress,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                "${(progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         intermediateBitmap?.let { bitmap ->
                             Spacer(modifier = Modifier.height(8.dp))
                             Card(

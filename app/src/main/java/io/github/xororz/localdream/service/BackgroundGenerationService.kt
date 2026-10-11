@@ -96,7 +96,14 @@ class BackgroundGenerationService : Service() {
 
     sealed class GenerationState {
         object Idle : GenerationState()
-        data class Progress(val progress: Float, val intermediateImage: Bitmap? = null) : GenerationState()
+        data class Progress(
+            val progress: Float,
+            val intermediateImage: Bitmap? = null,
+            // Non-null while OpenCL kernels for this resolution are being
+            // enumerated (tuned). Progress is reused so every existing
+            // "is running" check keeps working; only the UI reads this label.
+            val tuningStage: String? = null,
+        ) : GenerationState()
 
         data class Complete(val bitmap: Bitmap, val seed: Long?) : GenerationState()
         data class Error(val message: String) : GenerationState()
@@ -408,6 +415,26 @@ class BackgroundGenerationService : Service() {
 
                                     updateState(GenerationState.Progress(progress, bitmap))
                                     updateNotification(progress)
+                                }
+
+                                // OpenCL tuning ("enumeration") around a first
+                                // run at this resolution, or after the cache was
+                                // cleared. Bracketed only -- MNN reports no
+                                // percentage -- so the UI shows an indeterminate
+                                // bar labelled with the stage.
+                                "tuning" -> {
+                                    val started = message.optBoolean("started", true)
+                                    updateState(
+                                        if (started) {
+                                            GenerationState.Progress(
+                                                0f,
+                                                null,
+                                                message.optString("stage"),
+                                            )
+                                        } else {
+                                            GenerationState.Progress(0f)
+                                        },
+                                    )
                                 }
 
                                 "complete" -> {

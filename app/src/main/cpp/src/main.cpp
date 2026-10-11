@@ -504,6 +504,21 @@ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
           [pipeline, req](intptr_t, httplib::DataSink &sink) -> bool {
             try {
               std::lock_guard<std::mutex> generation_lock(g_generation_mutex);
+              // Surface OpenCL tuning ("enumeration") to the client as its own
+              // SSE event, so the UI can show a progress bar while the kernels
+              // for this resolution are being enumerated. MNN has no tuning
+              // progress callback, so this only brackets a pass (started
+              // true/false), never a percentage.
+              mnnTuningNotify() = [&sink, &req](const std::string &stage,
+                                                int width, bool started) {
+                nlohmann::json t = {
+                    {"type", "tuning"},
+                    {"stage", stage},
+                    {"width", width},
+                    {"started", started}};
+                std::string ev = "event: tuning\ndata: " + t.dump() + "\n\n";
+                if (sink.is_writable()) sink.write(ev.c_str(), ev.size());
+              };
               auto result = pipeline->generate(
                   *req, [&sink, &req](int s, int t, const std::string &img) {
                     nlohmann::json p = {
@@ -522,6 +537,8 @@ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
                       throw std::runtime_error(
                           "Client disconnected, generation aborted");
                   });
+              // Drop the sink reference before the provider scope unwinds.
+              mnnTuningNotify() = nullptr;
               auto enc_start = std::chrono::high_resolution_clock::now();
               std::string enc_img =
                   encodeResultImage(result, req->output_format);

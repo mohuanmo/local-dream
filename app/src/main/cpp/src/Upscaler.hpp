@@ -155,6 +155,8 @@ inline xt::xarray<uint8_t> upscaleWithMnn(
 
   MnnSessionOptions opts;
   opts.use_opencl = use_opencl;
+  opts.stage = "upscaler";
+  opts.width = width;
   if (use_opencl) {
     auto cache_dir = ensureCacheDir(
         std::filesystem::path(model_path).parent_path().string());

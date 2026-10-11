@@ -139,12 +139,22 @@ class PipelineSdxlMnn : public PipelineSdxl {
     config.backendConfig = &backend;
     config.type = stage == 0 && req.use_opencl ? MNN_FORWARD_OPENCL : MNN_FORWARD_CPU;
     config.numThread = 4;
+    bool tuning = false;
     if (config.type == MNN_FORWARD_OPENCL) {
-      config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_FAST;
-      net.setCacheFile((model_dir_ + "/unet.mnnc").c_str());
+      // Matches MnnUtils.hpp: wide tuning + image memory for Adreno.
+      config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
+      const std::string cache = model_dir_ + "/unet.mnnc";
+      net.setCacheFile(cache.c_str());
+      std::error_code ec;
+      tuning = !std::filesystem::exists(cache, ec) ||
+               std::filesystem::file_size(cache, ec) == 0;
     }
     if (stage == 0) net.setSessionMode(MNN::Interpreter::Session_Resize_Defer);
+    if (tuning && mnnTuningNotify())
+      mnnTuningNotify()("unet", req.width, true);
     sessions_[stage] = net.createSession(config);
+    if (tuning && mnnTuningNotify())
+      mnnTuningNotify()("unet", req.width, false);
     if (!sessions_[stage]) throw std::runtime_error(path);
     if (stage != 0) net.releaseModel();
     return net;
