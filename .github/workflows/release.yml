@@ -41,6 +41,10 @@ jobs:
       NDK_VERSION: "28.0.13004108"
       # Must match the QNN SDK revision CMakeLists.txt is written against.
       QNN_VERSION: "2.50.0.260828"
+      # tokenizers-cpp's Rust crate trips `dangerous_implicit_autorefs`, which
+      # newer rustc denies by default. Pin the toolchain the project's shipped
+      # libraries were actually built with (rustc path baked into the .so).
+      RUST_VERSION: "1.84.0"
       # True for tag pushes, and for manual runs with the switch on.
       REBUILD_NATIVE: ${{ github.event_name != 'workflow_dispatch' || inputs.rebuild_native }}
     steps:
@@ -88,10 +92,11 @@ jobs:
           sudo mkdir -p /data
           sudo ln -sfn "${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" /data/android-ndk-r28
           echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-          rustup toolchain install stable --profile minimal || true
-          rustup default stable || true
-          rustup target add aarch64-linux-android || true
-          rustc --version || true
+          rustup toolchain install "${RUST_VERSION}" --profile minimal
+          rustup default "${RUST_VERSION}"
+          rustup target add --toolchain "${RUST_VERSION}" aarch64-linux-android
+          rustc --version
+          cargo --version
 
       - name: Cache Gradle
         uses: actions/cache@v4
