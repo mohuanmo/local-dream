@@ -132,12 +132,25 @@ struct MnnSessionOptions {
   int gpu_tuning = MNN_GPU_TUNING_WIDE;
 };
 
+// bionic declares mallopt() only for API 26+, while M_PURGE is defined at every
+// level -- and the CMake build targets android21 even though the app's minSdk is
+// 28. Declare it weak so the call still compiles and is simply skipped if the
+// symbol is missing at runtime.
+#if defined(__ANDROID__) && (!defined(__ANDROID_API__) || __ANDROID_API__ < 26)
+extern "C" int mallopt(int param, int value) __attribute__((weak));
+#define MNN_MALLOPT_IS_WEAK 1
+#endif
+
 // Hands the native heap's free pages back to the OS. The enumeration pass peaks
 // far above steady state, so anything released by the previous phase (CLIP, the
 // UNet session, the cached preview) is worth returning before it starts.
 inline void mnnPurgeHeap() {
 #ifdef M_PURGE
+#ifdef MNN_MALLOPT_IS_WEAK
+  if (mallopt) mallopt(M_PURGE, 0);
+#else
   mallopt(M_PURGE, 0);
+#endif
 #endif
 }
 

@@ -509,7 +509,7 @@ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
               // for this resolution are being enumerated. MNN has no tuning
               // progress callback, so this only brackets a pass (started
               // true/false), never a percentage.
-              mnnTuningNotify() = [&sink, &req](const std::string &stage,
+              mnnTuningNotify() = [&sink](const std::string &stage,
                                                 int width, bool started) {
                 nlohmann::json t = {
                     {"type", "tuning"},
