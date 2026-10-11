@@ -106,6 +106,11 @@ class BackgroundGenerationService : Service() {
             // 1-based index of the enumeration pass in progress. MNN exposes no
             // per-kernel progress, so this counts passes (one per model stage).
             val tuningIndex: Int = 0,
+            // elapsedRealtime() when the current pass started, plus the learned
+            // duration for this (stage, resolution) from earlier runs. 0 means
+            // no estimate yet, in which case the UI keeps the bar indeterminate.
+            val tuningStartedAt: Long = 0L,
+            val tuningExpectedMs: Long = 0L,
         ) : GenerationState()
 
         data class Complete(val bitmap: Bitmap, val seed: Long?) : GenerationState()
@@ -292,6 +297,10 @@ class BackgroundGenerationService : Service() {
         var completed = false
         // 1-based count of OpenCL enumeration passes seen in this request.
         var tuningPass = 0
+        // Start time and preference key of the enumeration pass in flight, used
+        // to measure it for the next run's estimate.
+        var tuningPassStart = 0L
+        var tuningPassKey = ""
         try {
             updateState(GenerationState.Progress(0f))
 
@@ -375,7 +384,26 @@ class BackgroundGenerationService : Service() {
                             val jsonParseTime = System.currentTimeMillis() - jsonParseStart
                             messageCount++
 
-                            when (message.optString("type")) {
+                            val msgType = message.optString("type")
+                            // Close a pending enumeration measurement. The
+                            // native's "done" fires when createSession returns,
+                            // but the pipelines defer the real enumeration to
+                            // resizeSession(), so a pass is instead measured
+                            // from its "start" to the next event that resumes
+                            // the stream (progress / complete / next pass).
+                            if (tuningPassStart != 0L &&
+                                (msgType != "tuning" ||
+                                    message.optBoolean("started", true))
+                            ) {
+                                val dur = SystemClock.elapsedRealtime() - tuningPassStart
+                                tuningPassStart = 0L
+                                if (dur in 500..600_000) {
+                                    val prev = preferences.getLong(tuningPassKey, 0L)
+                                    val next = if (prev > 0L) (prev * 2 + dur) / 3 else dur
+                                    preferences.edit().putLong(tuningPassKey, next).apply()
+                                }
+                            }
+                            when (msgType) {
                                 "progress" -> {
                                     val step = message.optInt("step")
                                     val totalSteps = message.optInt("total_steps")
@@ -435,14 +463,27 @@ class BackgroundGenerationService : Service() {
                                 // The indicator is instead cleared by the next
                                 // real diffusion progress event below.
                                 "tuning" -> {
+                                    // Only "start" is acted on; the matching
+                                    // "done" is a no-op (see the comment on the
+                                    // measurement above and the UI, which keeps
+                                    // the indicator up until the next progress).
                                     if (message.optBoolean("started", true)) {
+                                        val stage = message.optString("stage")
+                                        val width = message.optInt("width")
+                                        // One estimate per stage and resolution:
+                                        // the duration depends mostly on the
+                                        // model graph and shapes, not the prompt.
                                         tuningPass += 1
+                                        tuningPassKey = "tuning_ms_${stage}_${width}x${height}"
+                                        tuningPassStart = SystemClock.elapsedRealtime()
                                         updateState(
                                             GenerationState.Progress(
                                                 0f,
                                                 null,
-                                                message.optString("stage"),
+                                                stage,
                                                 tuningPass,
+                                                tuningPassStart,
+                                                preferences.getLong(tuningPassKey, 0L),
                                             ),
                                         )
                                     }

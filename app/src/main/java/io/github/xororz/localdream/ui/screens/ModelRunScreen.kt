@@ -13,6 +13,7 @@ import android.graphics.ImageDecoder
 import android.graphics.Rect as AndroidRect
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -376,6 +377,9 @@ fun ModelRunScreen(
     var tuningStage by remember { mutableStateOf<String?>(null) }
     // 1-based index of the enumeration pass in progress (shown as a counter).
     var tuningIndex by remember { mutableStateOf(0) }
+    // Start time and learned duration of the pass, for the ETA-derived bar.
+    var tuningStartedAt by remember { mutableStateOf(0L) }
+    var tuningExpectedMs by remember { mutableStateOf(0L) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingBackend by remember { mutableStateOf(true) }
 
@@ -1551,6 +1555,8 @@ fun ModelRunScreen(
                 progress = state.progress
                 tuningStage = state.tuningStage
                 tuningIndex = state.tuningIndex
+                tuningStartedAt = state.tuningStartedAt
+                tuningExpectedMs = state.tuningExpectedMs
                 isRunning = true
                 state.intermediateImage?.let { intermediateBitmap = it }
             }
@@ -1564,6 +1570,7 @@ fun ModelRunScreen(
                     progress = 0f
                     tuningStage = null
                     tuningIndex = 0
+                    tuningExpectedMs = 0L
 
                     val genTime = generationStartTime?.let { startTime ->
                         val endTime = System.currentTimeMillis()
@@ -1685,6 +1692,7 @@ fun ModelRunScreen(
                 progress = 0f
                 tuningStage = null
                 tuningIndex = 0
+                tuningExpectedMs = 0L
                 generationStartTime = null
                 pendingUltrafix = false
             }
@@ -1694,6 +1702,7 @@ fun ModelRunScreen(
                 progress = 0f
                 tuningStage = null
                 tuningIndex = 0
+                tuningExpectedMs = 0L
             }
         }
     }
@@ -2471,28 +2480,60 @@ fun ModelRunScreen(
                             style = MaterialTheme.typography.titleMedium,
                         )
                         if (tuningStage != null) {
-                            // OpenCL kernel enumeration: no percentage is
-                            // available, so sweep the same bar while the pass
-                            // runs; layout is otherwise unchanged.
-                            val transition = rememberInfiniteTransition(label = "tuning")
-                            val sweep by transition.animateFloat(
-                                initialValue = 0f,
-                                targetValue = 1f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1200),
-                                    repeatMode = RepeatMode.Reverse,
-                                ),
-                                label = "tuningSweep",
-                            )
-                            SmoothLinearWavyProgressIndicator(
-                                progress = sweep,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Text(
-                                stringResource(R.string.tuning_gpu_kernels, tuningIndex),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            // OpenCL kernel enumeration. MNN reports no
+                            // per-kernel progress, so once a duration for this
+                            // (stage, resolution) is known from earlier runs the
+                            // bar is driven by the elapsed time; the very first
+                            // run sweeps instead. Layout is otherwise unchanged.
+                            val expected = tuningExpectedMs
+                            var nowMs by remember { mutableStateOf(0L) }
+                            LaunchedEffect(tuningStartedAt, expected) {
+                                if (expected <= 0L) return@LaunchedEffect
+                                while (true) {
+                                    nowMs = SystemClock.elapsedRealtime()
+                                    delay(1000)
+                                }
+                            }
+                            if (expected > 0L) {
+                                // Cap below 100%: the estimate is an average and
+                                // some passes run longer than it.
+                                val fraction = (
+                                    (nowMs - tuningStartedAt).toFloat() / expected
+                                    ).coerceIn(0f, 0.95f)
+                                SmoothLinearWavyProgressIndicator(
+                                    progress = fraction,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Text(
+                                    stringResource(
+                                        R.string.tuning_gpu_kernels_pct,
+                                        tuningIndex,
+                                        (fraction * 100).toInt(),
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                val transition = rememberInfiniteTransition(label = "tuning")
+                                val sweep by transition.animateFloat(
+                                    initialValue = 0f,
+                                    targetValue = 1f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(1200),
+                                        repeatMode = RepeatMode.Reverse,
+                                    ),
+                                    label = "tuningSweep",
+                                )
+                                SmoothLinearWavyProgressIndicator(
+                                    progress = sweep,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Text(
+                                    stringResource(R.string.tuning_gpu_kernels, tuningIndex),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         } else {
                             SmoothLinearWavyProgressIndicator(
                                 progress = progress,

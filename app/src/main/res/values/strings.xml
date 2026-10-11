@@ -209,6 +209,7 @@
     <string name="basic_time">Time: %s</string>
     <string name="opencl_warning">GPU runtime warning: The first run at each resolution will be slow as it generates cache files. Subsequent runs will be much faster.</string>
     <string name="tuning_gpu_kernels">Enumerating GPU kernels for this resolution (pass %1$d)…</string>
+    <string name="tuning_gpu_kernels_pct">Enumerating GPU kernels (pass %1$d) · ~%2$d%%</string>
     <string name="mnn_memory_image">Use OpenCL image memory</string>
     <string name="mnn_memory_image_hint">On: run the OpenCL image (texture) memory build, usually faster on Qualcomm GPUs. Off: run the OpenCL buffer memory build, the safer fallback if image memory produces corrupted output. Applies the next time the backend starts.</string>
 
