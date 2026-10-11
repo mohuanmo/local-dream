@@ -519,6 +519,15 @@ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
                 std::string ev = "event: tuning\ndata: " + t.dump() + "\n\n";
                 if (sink.is_writable()) sink.write(ev.c_str(), ev.size());
               };
+              // RAII: the hook captures this request's sink by reference, so it
+              // must be dropped on every exit path. A plain assignment after
+              // generate() would be skipped when generate() throws, leaving the
+              // hook pointing at a destroyed sink; a later session creation in
+              // this process (e.g. /upscale) would then write through a dangling
+              // reference.
+              struct TuningHookGuard {
+                ~TuningHookGuard() { mnnTuningNotify() = nullptr; }
+              } tuning_hook_guard;
               auto result = pipeline->generate(
                   *req, [&sink, &req](int s, int t, const std::string &img) {
                     nlohmann::json p = {
@@ -537,8 +546,6 @@ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
                       throw std::runtime_error(
                           "Client disconnected, generation aborted");
                   });
-              // Drop the sink reference before the provider scope unwinds.
-              mnnTuningNotify() = nullptr;
               auto enc_start = std::chrono::high_resolution_clock::now();
               std::string enc_img =
                   encodeResultImage(result, req->output_format);
