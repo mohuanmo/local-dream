@@ -23,10 +23,18 @@ object NativeCore {
     private const val BUFFER_NAME = "libstable_diffusion_core_buffer.so"
     private const val LEGACY_NAME = "libstable_diffusion_core.so"
 
-    /** True when the image-memory library should be used. Defaults to true. */
+    /**
+     * True when the image-memory library should be used.
+     *
+     * Defaults to false (BUFFER). IMAGE is what Qualcomm recommends for Adreno
+     * and it is usually faster, but some Adreno/驱动 combinations segfault
+     * inside MNN's kernel enumeration with it -- Adreno 618 (Snapdragon 730G)
+     * among them. Buffer memory is the safe default; users who want to try
+     * image memory can opt in from Settings.
+     */
     fun prefersImage(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(PREF_MEMORY_IMAGE, true)
+            .getBoolean(PREF_MEMORY_IMAGE, false)
 
     /**
      * The executable for the current setting. Falls back to the other variant,

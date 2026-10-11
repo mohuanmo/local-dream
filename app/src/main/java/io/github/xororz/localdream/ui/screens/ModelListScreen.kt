@@ -1444,7 +1444,9 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                     mutableStateOf(
                                         preferences.getBoolean(
                                             NativeCore.PREF_MEMORY_IMAGE,
-                                            true,
+                                            // Keep in step with NativeCore:
+                                            // image memory is opt-in.
+                                            false,
                                         ),
                                     )
                                 }
