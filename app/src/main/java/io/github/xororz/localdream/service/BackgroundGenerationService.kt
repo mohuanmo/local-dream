@@ -588,6 +588,14 @@ class BackgroundGenerationService : Service() {
                     }
                 }
             }
+            // A stream that ends without "complete" (backend process died,
+            // socket dropped) otherwise falls through silently and leaves the
+            // UI stuck on the last Progress state -- including the kernel-
+            // enumeration indicator, which would then never clear. Surface it
+            // as an error so the screen resets.
+            if (!completed) {
+                throw IOException("Generation stream ended before completion")
+            }
         } catch (e: Exception) {
             if (completed) {
                 // Result already delivered; a teardown exception from the
