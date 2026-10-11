@@ -39,6 +39,11 @@
     <string name="anima_seq_dit">Anima DiT sequential loading</string>
     <string name="anima_seq_dit_hint">Only with Anima low RAM mode: never keep both DiT halves in memory at the same time. Enable this if you have 12GB RAM but Anima low RAM mode still cannot run. Slower per step.</string>
     <string name="captured_logs_title">Captured logs</string>
+    <string name="backend_crashed">Backend process crashed (signal %1$d · %2$s)</string>
+    <string name="backend_exited">Backend process exited unexpectedly (code %1$d)</string>
+    <string name="signal_sigkill">SIGKILL, usually the system reclaiming memory</string>
+    <string name="signal_sigsegv">SIGSEGV (invalid memory access)</string>
+    <string name="backend_log_at">Backend log: %1$s</string>
     <string name="log_saved">Saved to %1$s</string>
     <string name="log_save_failed">Failed to save log</string>
     <string name="no_logs_captured">No logs were captured</string>

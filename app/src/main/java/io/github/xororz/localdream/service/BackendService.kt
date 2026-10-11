@@ -14,6 +14,9 @@ import io.github.xororz.localdream.data.ModelStorage
 import io.github.xororz.localdream.data.NativeCore
 import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +66,12 @@ class BackendService : Service() {
 
         // Printed once per kernel by MNN's OpenCL LWS tuner.
         private const val TUNING_KERNEL_LINE = "lws tune res"
+
+        // Where the backend's own output is mirrored, relative to ModelStorage
+        // root (Download/LocalDream by default).
+        private const val LOG_DIR = "logs"
+        private const val BACKEND_LOG_NAME = "backend.log"
+        private const val BACKEND_LOG_MAX_BYTES = 2L * 1024 * 1024
 
         const val RUNTIME_DIR = "runtime_libs"
         private const val RUNTIME_VERSION = "qnn_2_50_0_260828"
@@ -700,16 +709,101 @@ class BackendService : Service() {
         }
     }
 
+    // Mirror of the live backend's output, and where it lives on disk.
+    private var backendLogWriter: java.io.Writer? = null
+    private var lastBackendLogPath: String? = null
+
+    /**
+     * Opens (appending) the mirrored backend log under the LocalDream folder the
+     * user can already reach, truncating it once it gets large.
+     */
+    private fun openBackendLog() {
+        closeBackendLog()
+        // Prefer the LocalDream folder the user already browses; fall back to the
+        // app's private dir when external storage is not writable right now.
+        val dirs = listOf(File(ModelStorage.root(this), LOG_DIR), File(filesDir, LOG_DIR))
+        val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val res = servingResolution.value?.let { "${it.first}x${it.second}" } ?: "?"
+        for (dir in dirs) {
+            try {
+                if (!dir.exists() && !dir.mkdirs()) continue
+                val file = File(dir, BACKEND_LOG_NAME)
+                if (file.length() > BACKEND_LOG_MAX_BYTES) file.delete()
+                backendLogWriter = file.bufferedWriter(Charsets.UTF_8).apply {
+                    write("=== backend start $stamp | model=${servingModelId.value ?: "?"} $res ===\n")
+                    flush()
+                }
+                lastBackendLogPath = file.absolutePath
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "cannot open backend log in $dir", e)
+                backendLogWriter = null
+            }
+        }
+    }
+
+    private fun backendLogLine(text: String) {
+        try {
+            backendLogWriter?.let {
+                it.write(text)
+                it.write("\n")
+                it.flush()
+            }
+        } catch (_: Exception) {
+            // Logging must never take the monitor thread down.
+        }
+    }
+
+    private fun closeBackendLog() {
+        try {
+            backendLogWriter?.close()
+        } catch (_: Exception) {
+        }
+        backendLogWriter = null
+    }
+
+    /**
+     * Turns waitFor()'s code into something actionable. A code above 128 means
+     * the process was killed by a signal, and which signal decides whether this
+     * was the GPU driver (SIGSEGV) or the system reclaiming memory (SIGKILL).
+     */
+    private fun describeBackendExit(code: Int): String {
+        val base = if (code <= 128) {
+            getString(R.string.backend_exited, code)
+        } else {
+            val signal = code - 128
+            val name = when (signal) {
+                4 -> "SIGILL"
+                6 -> "SIGABRT"
+                7 -> "SIGBUS"
+                9 -> getString(R.string.signal_sigkill)
+                11 -> getString(R.string.signal_sigsegv)
+                13 -> "SIGPIPE"
+                else -> "signal $signal"
+            }
+            getString(R.string.backend_crashed, signal, name)
+        }
+        val path = lastBackendLogPath
+        return if (path == null) base else "$base\n" + getString(R.string.backend_log_at, path)
+    }
+
     private fun startMonitorThread(proc: Process) {
         Thread {
+            // Mirror the backend's own output to a file the user can hand over.
+            // The in-app capture runs `logcat --pid=<this app>`, and Android
+            // restricts logcat for normal apps anyway, so without this a backend
+            // crash leaves no usable evidence.
+            openBackendLog()
             val exitCode = try {
                 proc.inputStream.bufferedReader().use { reader ->
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
-                        Log.i(TAG, "Backend: $line")
+                        val text = line ?: continue
+                        Log.i(TAG, "Backend: $text")
+                        backendLogLine(text)
                         // MNN's OpenCL tuner logs one of these per tuned kernel;
                         // count them so the UI can show live enumeration progress.
-                        if (line?.contains(TUNING_KERNEL_LINE) == true) {
+                        if (text.contains(TUNING_KERNEL_LINE)) {
                             StateHolder._tuningKernelCount.value =
                                 StateHolder._tuningKernelCount.value + 1
                         }
@@ -718,19 +812,26 @@ class BackendService : Service() {
                 proc.waitFor()
             } catch (e: Exception) {
                 Log.e(TAG, "monitor error", e)
+                backendLogLine("!!! monitor error: ${e.message}")
+                closeBackendLog()
                 if (isLiveCrash(proc)) {
                     updateState(BackendState.Error("monitor error: ${e.message}", servingModelId.value))
                 }
                 return@Thread
             }
             Log.i(TAG, "Backend process exited with code: $exitCode")
+            backendLogLine(describeBackendExit(exitCode))
+            closeBackendLog()
             // Only surface as an error when this is still the active process and
             // we didn't intentionally stop it; a torn-down or superseded process
             // exiting is expected and must not poison the shared backendState.
             if (isLiveCrash(proc)) {
+                // Report why, not just that: a signal (SIGSEGV / SIGKILL) is the
+                // difference between "the GPU driver died" and "we ran out of
+                // memory", and the user only ever sees this string.
                 updateState(
                     BackendState.Error(
-                        "Backend process exited with code: $exitCode",
+                        describeBackendExit(exitCode),
                         servingModelId.value,
                     ),
                 )

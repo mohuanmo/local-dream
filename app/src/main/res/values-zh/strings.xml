@@ -37,6 +37,11 @@
     <string name="anima_seq_dit">Anima DiT 轮流加载</string>
     <string name="anima_seq_dit_hint">仅在 Anima 低内存模式下生效：不再让 DiT 的两块同时驻留内存。如果你有 12GB 内存但 Anima 低内存模式仍无法运行，请开启此选项。每步速度会变慢。</string>
     <string name="captured_logs_title">已收集的日志</string>
+    <string name="backend_crashed">后端进程崩溃（信号 %1$d · %2$s）</string>
+    <string name="backend_exited">后端进程异常退出（代码 %1$d）</string>
+    <string name="signal_sigkill">SIGKILL，通常是被系统因内存不足终止</string>
+    <string name="signal_sigsegv">SIGSEGV（非法内存访问）</string>
+    <string name="backend_log_at">后端日志：%1$s</string>
     <string name="log_saved">已保存到 %1$s</string>
     <string name="log_save_failed">日志保存失败</string>
     <string name="no_logs_captured">未收集到日志</string>

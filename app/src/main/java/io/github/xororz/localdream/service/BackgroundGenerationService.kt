@@ -653,11 +653,20 @@ class BackgroundGenerationService : Service() {
                 updateState(GenerationState.Idle)
             } else {
                 Log.e("GenerationService", "generation error", e)
-                updateState(
-                    GenerationState.Error(
-                        e.message ?: this@BackgroundGenerationService.getString(R.string.unknown_error),
-                    ),
-                )
+                // A crashed backend shows up here as a bare EOFException whose
+                // message is null, so the UI would only ever say "unknown error".
+                // BackendService knows the exit code and signal, so prefer that.
+                val backendError =
+                    (BackendService.backendState.value as? BackendService.BackendState.Error)
+                        ?.message
+                val message = when {
+                    backendError != null ->
+                        listOfNotNull(e.message, backendError).joinToString("\n")
+                    else ->
+                        e.message
+                            ?: this@BackgroundGenerationService.getString(R.string.unknown_error)
+                }
+                updateState(GenerationState.Error(message))
             }
             stopSelf()
         } finally {
