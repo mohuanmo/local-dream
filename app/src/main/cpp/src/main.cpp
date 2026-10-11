@@ -2,6 +2,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -812,6 +813,17 @@ static void registerTokenizeEndpoint(httplib::Server &svr,
 }
 
 int main(int argc, char **argv) {
+  // The app consumes this process's output line by line: it counts MNN's
+  // per-kernel "lws tune res" lines to show enumeration progress, mirrors
+  // everything into a log file the user can hand over, and reports the exit
+  // signal. When stdout is a pipe -- which it always is here, the app reads it
+  // -- it is BLOCK buffered, so those lines only surfaced in 4-8 KB chunks and
+  // whatever was still buffered was lost when the process died. That is why the
+  // counter sat at 0 during a pass and crash logs came out empty. MNN_PRINT and
+  // MNN_ERROR both resolve to printf() in this build (MNN_USE_LOGCAT is off), so
+  // flushing per line is what makes them observable.
+  setvbuf(stdout, nullptr, _IOLBF, 0);
+  setvbuf(stderr, nullptr, _IOLBF, 0);
   if (!qnn::log::initializeLogging()) {
     std::cerr << "ERROR: Init logging failed!\n";
     return EXIT_FAILURE;
