@@ -417,24 +417,28 @@ class BackgroundGenerationService : Service() {
                                     updateNotification(progress)
                                 }
 
-                                // OpenCL tuning ("enumeration") around a first
-                                // run at this resolution, or after the cache was
-                                // cleared. Bracketed only -- MNN reports no
-                                // percentage -- so the UI shows an indeterminate
-                                // bar labelled with the stage.
+                                // OpenCL tuning ("enumeration") on a first run
+                                // at this resolution, or after the cache was
+                                // cleared. Only the *start* is acted on: the
+                                // native side can only bracket createSession,
+                                // but the pipelines use Session_Resize_Defer,
+                                // so the real kernel enumeration happens a
+                                // little later in resizeSession(). Clearing on
+                                // the "done" event would drop the indicator
+                                // right before the slow part and leave the
+                                // plain 0% bar showing through the whole pass.
+                                // The indicator is instead cleared by the next
+                                // real diffusion progress event below.
                                 "tuning" -> {
-                                    val started = message.optBoolean("started", true)
-                                    updateState(
-                                        if (started) {
+                                    if (message.optBoolean("started", true)) {
+                                        updateState(
                                             GenerationState.Progress(
                                                 0f,
                                                 null,
                                                 message.optString("stage"),
-                                            )
-                                        } else {
-                                            GenerationState.Progress(0f)
-                                        },
-                                    )
+                                            ),
+                                        )
+                                    }
                                 }
 
                                 "complete" -> {
