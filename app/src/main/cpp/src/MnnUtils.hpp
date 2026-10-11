@@ -100,16 +100,17 @@ inline MnnTuningNotify &mnnTuningNotify() {
 }
 
 // Session creation options shared by every MNN model in the pipeline.
-// CPU: 4 threads, low-memory, high-power, fp16 (arm82) where available.
-// OpenCL: wide tuning + image memory with low precision (fp16), plus an
-// on-disk tuning cache when cache_file is set.
+// CPU: 4 threads, low-memory, high-power, default precision.
+// OpenCL: wide tuning + low precision, plus an on-disk tuning cache when
+// cache_file is set.
 //
 // GPU tuning knobs (relevant on Adreno, e.g. the 730G's Adreno 618):
-//   - MNN_GPU_TUNING_WIDE is MNN's default and selects better kernels than
-//     MNN_GPU_TUNING_FAST, at the cost of a slower FIRST run per shape; the
-//     result is persisted via cache_file, so later runs pay it once.
+//   - MNN_GPU_TUNING_WIDE selects better kernels than MNN_GPU_TUNING_FAST, at
+//     the cost of a slower FIRST run per shape; the result is persisted via
+//     cache_file, so later runs pay it once.
 //   - The memory mode (IMAGE vs BUFFER) is fixed at build time by
 //     SDCORE_GPU_MEMORY_IMAGE, so the two shipped libraries differ only there.
+//     BUFFER is the default; IMAGE is an opt-in experiment.
 struct MnnSessionOptions {
   bool use_opencl = false;
   std::string cache_file;  // OpenCL tuning cache path ("" = no cache file)
@@ -135,6 +136,9 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
                std::filesystem::file_size(opts.cache_file, ec) == 0;
     }
     config.type = MNN_FORWARD_OPENCL;
+    // WIDE tuning selects better kernels than upstream's FAST, at the cost of a
+    // slower FIRST run per shape; the result is persisted via cache_file, so
+    // later runs pay it once.
 #if SDCORE_GPU_MEMORY_IMAGE
     config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
 #else
@@ -145,9 +149,11 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
     config.type = MNN_FORWARD_CPU;
     config.numThread = opts.num_threads;
     backendConfig.memory = MNN::BackendConfig::Memory_Low;
-    // Precision_Low enables arm82 fp16 on ARMv8.2+ cores (the 730G's A76),
-    // cutting memory traffic; cores without fp16 just stay fp32.
-    backendConfig.precision = MNN::BackendConfig::Precision_Low;
+    // No Precision_Low here. It would enable arm82 fp16 on ARMv8.2+ cores,
+    // but the CPU path also runs the CLIP text encoder even when the UNet is
+    // on OpenCL -- and fp16 there turned the conditioning (and therefore the
+    // whole image) into solid white/black on at least one device. Upstream
+    // leaves CPU precision at the default; keep it that way.
   }
   backendConfig.power = MNN::BackendConfig::Power_High;
   config.backendConfig = &backendConfig;

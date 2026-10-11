@@ -141,8 +141,12 @@ class PipelineSdxlMnn : public PipelineSdxl {
     config.numThread = 4;
     bool tuning = false;
     if (config.type == MNN_FORWARD_OPENCL) {
-      // Matches MnnUtils.hpp: wide tuning + image memory for Adreno.
+      // Matches MnnUtils.hpp: wide tuning, memory mode chosen at build time.
+#if SDCORE_GPU_MEMORY_IMAGE
       config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
+#else
+      config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_WIDE;
+#endif
       // Memory-mode tag, as in MnnUtils.hpp, so the two builds keep
       // separate tuning caches.
       const std::string cache =
