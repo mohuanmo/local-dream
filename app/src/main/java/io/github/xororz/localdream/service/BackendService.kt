@@ -11,6 +11,7 @@ import io.github.xororz.localdream.data.DitEngine
 import io.github.xororz.localdream.data.DitResolution
 import io.github.xororz.localdream.data.Model
 import io.github.xororz.localdream.data.ModelStorage
+import io.github.xororz.localdream.data.NativeCore
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -59,7 +60,7 @@ class BackendService : Service() {
 
     companion object {
         private const val TAG = "BackendService"
-        private const val EXECUTABLE_NAME = "libstable_diffusion_core.so"
+
         const val RUNTIME_DIR = "runtime_libs"
         private const val RUNTIME_VERSION = "qnn_2_50_0_260828"
         private const val RUNTIME_VERSION_FILE = ".runtime_version"
@@ -166,6 +167,10 @@ class BackendService : Service() {
         val width: Int,
         val height: Int,
         val listenOnAll: Boolean,
+        // Which memory-mode library to run. Part of the config so flipping the
+        // setting in Settings restarts the backend onto the other executable
+        // instead of silently reusing the running one.
+        val memImage: Boolean,
     )
 
     override fun onCreate() {
@@ -233,7 +238,8 @@ class BackendService : Service() {
         val listenOnAll = getSharedPreferences("app_prefs", MODE_PRIVATE)
             .getBoolean("listen_on_all_addresses", false) ||
             RemoteHostService.isRunning.value
-        return BackendConfig(modelId, backendType, width, height, listenOnAll)
+        val memImage = NativeCore.prefersImage(this)
+        return BackendConfig(modelId, backendType, width, height, listenOnAll, memImage)
     }
 
     // Declares the desired backend and converges to it. Cancels any pending
@@ -484,7 +490,7 @@ class BackendService : Service() {
             val nativeDir = applicationInfo.nativeLibraryDir
             val modelsDir = File(Model.getModelsDir(this), modelId)
 
-            val executableFile = File(nativeDir, EXECUTABLE_NAME)
+            val executableFile = NativeCore.executable(this)
 
             if (!executableFile.exists()) {
                 Log.e(TAG, "error: executable does not exist: ${executableFile.absolutePath}")

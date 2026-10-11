@@ -200,6 +200,8 @@
     <string name="basic_time">耗时: %s</string>
     <string name="opencl_warning">GPU运行时警告：每个分辨率的首次运行会比较慢，这会生成缓存文件。后续运行会快一些。</string>
     <string name="tuning_gpu_kernels">正在枚举该分辨率的 GPU 内核…</string>
+    <string name="mnn_memory_image">使用 OpenCL 图像内存</string>
+    <string name="mnn_memory_image_hint">开：运行 OpenCL 图像（纹理）内存版本，在高通 GPU 上通常更快。关：运行 OpenCL 缓冲内存版本，若图像内存导致画面异常可切换到此项。下次启动后端时生效。</string>
 
     <!-- Parameter Share -->
     <string name="share">分享</string>

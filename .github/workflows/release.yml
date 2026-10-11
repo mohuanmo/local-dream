@@ -151,9 +151,13 @@ jobs:
         if: env.REBUILD_NATIVE == 'true'
         run: |
           ( cd app/src/main/cpp && bash build.sh )
-          echo "Rebuilt core library:"
-          ls -la app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so
-          sha256sum app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so
+          # The bundle shipped the pre-split single library; the app now picks
+          # one of the two variants, so drop the stale copy to keep the APK
+          # from carrying a third 12 MB build.
+          rm -f app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so
+          echo "Rebuilt core libraries:"
+          ls -la app/src/main/jniLibs/arm64-v8a/
+          sha256sum app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core_*.so
 
       - name: Prepare signing keystore
         env:

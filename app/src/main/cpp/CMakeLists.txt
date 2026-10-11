@@ -148,28 +148,39 @@ else()
     add_definitions(-DQNN_API=__attribute__\(\(visibility\(\"default\"\)\)\))
 endif()
 
-# executable
-add_executable(${PROJECT_NAME} ${SOURCES})
-if(NOT QNN_DEBUG_ENABLE)
-    target_link_options(${PROJECT_NAME} PRIVATE "-Wl,-s")
-endif()
-target_include_directories(${PROJECT_NAME} PRIVATE ${PACKAGE_INCLUDES})
+# Two otherwise identical executables that differ only in the OpenCL memory
+# mode, so the app can ship both and switch at runtime via a setting:
+#   libstable_diffusion_core_image.so  -> MNN_GPU_MEMORY_IMAGE
+#   libstable_diffusion_core_buffer.so -> MNN_GPU_MEMORY_BUFFER
+foreach(mem_mode IN ITEMS image buffer)
+    set(TARGET_NAME "libstable_diffusion_core_${mem_mode}.so")
+    add_executable(${TARGET_NAME} ${SOURCES})
+    if(NOT QNN_DEBUG_ENABLE)
+        target_link_options(${TARGET_NAME} PRIVATE "-Wl,-s")
+    endif()
+    target_include_directories(${TARGET_NAME} PRIVATE ${PACKAGE_INCLUDES})
 
-set_target_properties(${PROJECT_NAME}
-    PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${OUTPUT_SUFFIX}"
-)
+    set_target_properties(${TARGET_NAME}
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${OUTPUT_SUFFIX}"
+    )
 
-target_compile_definitions(${PROJECT_NAME}
-    PRIVATE
-    XTENSOR_USE_XSIMD
-)
+    target_compile_definitions(${TARGET_NAME}
+        PRIVATE
+        XTENSOR_USE_XSIMD
+    )
+    if(mem_mode STREQUAL "image")
+        target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_GPU_MEMORY_IMAGE=1)
+    else()
+        target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_GPU_MEMORY_IMAGE=0)
+    endif()
 
-# link
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    ${PLATFORM_LIBS}
-    MNN
-    tokenizers_cpp
-    libzstd
-)
+    # link
+    target_link_libraries(${TARGET_NAME}
+        PRIVATE
+        ${PLATFORM_LIBS}
+        MNN
+        tokenizers_cpp
+        libzstd
+    )
+endforeach()

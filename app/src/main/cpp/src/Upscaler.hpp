@@ -165,7 +165,7 @@ inline xt::xarray<uint8_t> upscaleWithMnn(
              ? model_path
              : cache_dir + "/" +
                    std::filesystem::path(model_path).filename().string()) +
-        ".mnnc";
+        ".mnnc." + mnnGpuMemoryTag();
   }
 
   auto session = createMnnSession(interpreter.get(), opts);

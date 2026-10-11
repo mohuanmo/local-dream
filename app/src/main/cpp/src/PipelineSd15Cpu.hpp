@@ -251,8 +251,11 @@ class PipelineSd15Cpu : public Pipeline {
     opts.width = req.width;
     if (req.use_opencl) {
       auto cache_dir = ensureCacheDir(model_dir_);
+      // The memory-mode tag keeps the IMAGE and BUFFER builds from sharing a
+      // tuning cache that was produced for the other mode.
       opts.cache_file = (cache_dir.empty() ? model_dir_ : cache_dir) + "/" +
-                        stage + ".mnnc." + std::to_string(req.width);
+                        stage + ".mnnc." + mnnGpuMemoryTag() + "." +
+                        std::to_string(req.width);
     }
     return opts;
   }

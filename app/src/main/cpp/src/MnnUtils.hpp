@@ -65,6 +65,26 @@ inline MNN::Interpreter *createMnnInterpreterMmap(const char *path) {
   return interpreter;
 }
 
+// GPU memory mode is a BUILD-time choice, so the app can ship two otherwise
+// identical libraries and let the user pick at runtime:
+//   SDCORE_GPU_MEMORY_IMAGE=1 -> MNN_GPU_MEMORY_IMAGE  (Texture + L1 cache;
+//                                Qualcomm's recommendation for Adreno)
+//   SDCORE_GPU_MEMORY_IMAGE=0 -> MNN_GPU_MEMORY_BUFFER (the tamer fallback
+//                                for drivers/models that dislike IMAGE)
+#ifndef SDCORE_GPU_MEMORY_IMAGE
+#define SDCORE_GPU_MEMORY_IMAGE 1
+#endif
+
+// Short tag mixed into the OpenCL tuning-cache file name so the two builds
+// never read each other's tuned kernels.
+inline const char *mnnGpuMemoryTag() {
+#if SDCORE_GPU_MEMORY_IMAGE
+  return "img";
+#else
+  return "buf";
+#endif
+}
+
 // Notified around an OpenCL tuning ("enumeration") pass. MNN exposes no
 // per-kernel tuning progress, so a pass can only be bracketed: `started` is
 // true right before a session whose on-disk tuning cache is missing is
@@ -88,10 +108,8 @@ inline MnnTuningNotify &mnnTuningNotify() {
 //   - MNN_GPU_TUNING_WIDE is MNN's default and selects better kernels than
 //     MNN_GPU_TUNING_FAST, at the cost of a slower FIRST run per shape; the
 //     result is persisted via cache_file, so later runs pay it once.
-//   - MNN_GPU_MEMORY_IMAGE routes tensors through the texture unit + L1
-//     cache, which Qualcomm recommends over MNN_GPU_MEMORY_BUFFER. If a
-//     specific driver/model misbehaves (black or NaN output) with IMAGE,
-//     switch this single expression back to MNN_GPU_MEMORY_BUFFER.
+//   - The memory mode (IMAGE vs BUFFER) is fixed at build time by
+//     SDCORE_GPU_MEMORY_IMAGE, so the two shipped libraries differ only there.
 struct MnnSessionOptions {
   bool use_opencl = false;
   std::string cache_file;  // OpenCL tuning cache path ("" = no cache file)
@@ -117,7 +135,11 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
                std::filesystem::file_size(opts.cache_file, ec) == 0;
     }
     config.type = MNN_FORWARD_OPENCL;
+#if SDCORE_GPU_MEMORY_IMAGE
     config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
+#else
+    config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_WIDE;
+#endif
     backendConfig.precision = MNN::BackendConfig::Precision_Low;
   } else {
     config.type = MNN_FORWARD_CPU;

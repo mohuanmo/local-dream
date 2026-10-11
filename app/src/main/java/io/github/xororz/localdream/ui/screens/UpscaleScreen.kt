@@ -46,6 +46,7 @@ import coil.request.ImageRequest
 import io.github.xororz.localdream.BuildConfig
 import io.github.xororz.localdream.R
 import io.github.xororz.localdream.data.DownloadProgress
+import io.github.xororz.localdream.data.NativeCore
 import io.github.xororz.localdream.data.RemoteRepository
 import io.github.xororz.localdream.data.UpscalerRepository
 import io.github.xororz.localdream.navigation.popBackStackIfResumed
@@ -178,7 +179,7 @@ fun UpscaleScreen(navController: NavController, modifier: Modifier = Modifier) {
             try {
                 val runtimeDir = prepareRuntimeDir(context)
                 val nativeDir = context.applicationInfo.nativeLibraryDir
-                val executableFile = File(nativeDir, "libstable_diffusion_core.so")
+                val executableFile = NativeCore.executable(context)
 
                 if (!executableFile.exists()) {
                     withContext(Dispatchers.Main) {

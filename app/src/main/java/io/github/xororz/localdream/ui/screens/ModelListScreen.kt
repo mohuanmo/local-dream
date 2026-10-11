@@ -1440,6 +1440,14 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         preferences.getBoolean("listen_on_all_addresses", false),
                                     )
                                 }
+                                var mnnMemoryImage by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(
+                                            NativeCore.PREF_MEMORY_IMAGE,
+                                            true,
+                                        ),
+                                    )
+                                }
                                 var enableTagAutocomplete by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_tag_autocomplete", true)
@@ -1797,6 +1805,20 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         listenOnAllAddresses = it
                                         preferences.edit {
                                             putBoolean("listen_on_all_addresses", it)
+                                        }
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                SwitchSettingRow(
+                                    title = stringResource(R.string.mnn_memory_image),
+                                    description = stringResource(R.string.mnn_memory_image_hint),
+                                    checked = mnnMemoryImage,
+                                    onCheckedChange = {
+                                        mnnMemoryImage = it
+                                        preferences.edit {
+                                            putBoolean(NativeCore.PREF_MEMORY_IMAGE, it)
                                         }
                                     },
                                 )
@@ -3589,7 +3611,7 @@ suspend fun convertCustomModel(
         }
 
         val nativeDir = context.applicationInfo.nativeLibraryDir
-        val executableFile = File(nativeDir, "libstable_diffusion_core.so")
+        val executableFile = NativeCore.executable(context)
 
         if (!executableFile.exists()) {
             throw Exception("Executable not found: ${executableFile.absolutePath}")
