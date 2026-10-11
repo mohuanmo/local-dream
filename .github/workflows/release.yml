@@ -79,22 +79,42 @@ jobs:
             echo "HEXAGON_SDK_ROOT=$RUNNER_TEMP/hexagon" >> "$GITHUB_ENV"
           fi
 
-      - name: Build native libraries
+      # Gets the native libraries into app/src/main/{jniLibs,assets}. Order:
+      #   1. already committed to the repo
+      #   2. a prebuilt bundle attached to a release (default: the
+      #      "native-bundle" release of this repository)
+      #   3. built here from the proprietary QNN/Hexagon SDKs, when provided
+      - name: Provide native libraries
+        env:
+          NATIVE_BUNDLE_URL: ${{ secrets.NATIVE_BUNDLE_URL }}
         run: |
           if [ -f app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so ]; then
-            echo "Native libraries are committed to the repo; skipping the native build."
+            echo "Native libraries are committed to the repo; nothing to do."
             exit 0
           fi
-          if [ -z "$QNN_SDK_ROOT" ]; then
-            echo "::error::No native libraries in the repo and QNN_SDK_URL is not set. Either add the QNN_SDK_URL secret or commit the prebuilt libraries under app/src/main/jniLibs and app/src/main/assets."
-            exit 1
+
+          url="${NATIVE_BUNDLE_URL:-https://github.com/${{ github.repository }}/releases/download/native-bundle/native-bundle.tar.gz}"
+          echo "Fetching prebuilt native libraries from: $url"
+          if curl -fsSL "$url" -o "$RUNNER_TEMP/native-bundle.tar.gz"; then
+            tar xzf "$RUNNER_TEMP/native-bundle.tar.gz" -C app/src/main
+            echo "Staged native libraries:"
+            ls -la app/src/main/jniLibs/arm64-v8a
+            exit 0
           fi
-          ( cd app/src/main/cpp && bash build.sh )
-          if [ -n "$HEXAGON_SDK_ROOT" ]; then
-            ( cd app/src/main/cpp && bash dit/build.sh )
-          else
-            echo "::warning::HEXAGON_SDK_URL is not set; libdit_engine.so (DiT models) will be missing."
+
+          if [ -n "$QNN_SDK_ROOT" ]; then
+            echo "No bundle; building native libraries from the SDKs."
+            ( cd app/src/main/cpp && bash build.sh )
+            if [ -n "$HEXAGON_SDK_ROOT" ]; then
+              ( cd app/src/main/cpp && bash dit/build.sh )
+            else
+              echo "::warning::HEXAGON_SDK_URL is not set; libdit_engine.so (DiT models) will be missing."
+            fi
+            exit 0
           fi
+
+          echo "::error::No native libraries: the bundle could not be downloaded and no QNN_SDK_URL is set."
+          exit 1
 
       - name: Prepare signing keystore
         env:
