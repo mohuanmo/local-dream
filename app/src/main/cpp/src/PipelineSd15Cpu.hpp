@@ -196,6 +196,12 @@ class PipelineSd15Cpu : public Pipeline {
     unet_session_ = nullptr;
     delete unet_interpreter_;
     unet_interpreter_ = nullptr;
+    // Hand the UNet's heap back to the OS before the VAE allocates. Freed but
+    // retained heap would otherwise stack with the VAE's peak, and both the
+    // kernel OOM killer and the platform's low-memory killer pick their victim
+    // largely by RSS -- so staying small is the one protection a generation can
+    // give itself on a device that is already tight.
+    mnnPurgeHeap();
   }
 
   void releaseTransientModels() override { endDenoise(); }
@@ -245,6 +251,9 @@ class PipelineSd15Cpu : public Pipeline {
 
     interpreter->releaseSession(session);
     delete interpreter;
+    // Same reasoning as endDenoise(): give the decoder's heap back before the
+    // result is post-processed and held for the response.
+    mnnPurgeHeap();
   }
 
  private:

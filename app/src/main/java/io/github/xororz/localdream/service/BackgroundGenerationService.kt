@@ -51,6 +51,12 @@ class BackgroundGenerationService : Service() {
         const val ACTION_STOP = "stop_generation"
         const val LOCAL_BACKEND_HOST = "localhost:8081"
 
+        // Re-issuing a run whose backend died underneath it. Bounded: the cause
+        // worth recovering from (the system killing the app's child process) is
+        // transient, and BackendService already relaunches that process itself.
+        private const val MAX_GENERATION_RETRIES = 2
+        private const val BACKEND_RECOVERY_TIMEOUT_MS = 180_000L
+
         // Shared across generations; the long timeouts cover a single SDXL
         // request that can stream for many minutes.
         private val generationClient: OkHttpClient by lazy {
@@ -271,6 +277,43 @@ class BackgroundGenerationService : Service() {
         return START_NOT_STICKY
     }
 
+    /**
+     * Whether a failed run is worth re-issuing. Only a backend that vanished
+     * counts: a request the backend rejected, a missing model, or a cancelled
+     * run would fail the same way again. The message BackendService publishes
+     * for a crash carries the signal or exit code, and a killed process surfaces
+     * here as a stream EOF whose message may be null -- the two together are the
+     * signature.
+     */
+    private fun shouldRetryAfterBackendDeath(e: Exception, attempt: Int): Boolean {
+        if (attempt >= MAX_GENERATION_RETRIES) return false
+        val reported = (BackendService.backendState.value as? BackendService.BackendState.Error)
+            ?.message ?: return false
+        val crashLike = reported.contains("SIG") ||
+            reported.contains("signal") ||
+            reported.contains("exit")
+        val streamLike = e is java.io.EOFException || e.message.isNullOrBlank()
+        return crashLike && streamLike
+    }
+
+    /**
+     * Waits for the backend to serve again after it was killed. BackendService
+     * relaunches a system-killed process by itself, so this normally only waits
+     * out the spawn; the timeout stops a backend that cannot come back from
+     * pinning the screen forever.
+     */
+    private suspend fun waitForBackendReady(): Boolean {
+        val deadline = System.currentTimeMillis() + BACKEND_RECOVERY_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (cancelRequested) return false
+            if (BackendService.backendState.value is BackendService.BackendState.Running) {
+                return true
+            }
+            delay(1000)
+        }
+        return false
+    }
+
     @Suppress("LongParameterList")
     private suspend fun runGeneration(
         prompt: String,
@@ -292,6 +335,9 @@ class BackgroundGenerationService : Service() {
         ultrafix: Boolean,
         ultrafixTileSize: Int,
         backendHost: String,
+        // 0 on the first attempt; bumped when a run is re-issued after the
+        // backend died underneath it (see the catch below).
+        attempt: Int = 0,
     ) = withContext(Dispatchers.IO) {
         // Set once the complete event is fully handled; a socket teardown
         // racing the service shutdown after that point is not an error.
@@ -667,6 +713,51 @@ class BackgroundGenerationService : Service() {
                 // read; this is the expected exit, not an error.
                 Log.d("GenerationService", "generation cancelled")
                 updateState(GenerationState.Idle)
+            } else if (shouldRetryAfterBackendDeath(e, attempt)) {
+                // The backend disappeared underneath the run -- the system
+                // killing the app's child process being the usual cause.
+                // BackendService relaunches that process by itself (bounded), so
+                // wait for it to serve again and re-issue this exact request
+                // instead of throwing away everything the run had done.
+                val next = attempt + 1
+                Log.w("GenerationService", "backend died mid-run, retry $next")
+                if (waitForBackendReady()) {
+                    runGeneration(
+                        prompt,
+                        negativePrompt,
+                        steps,
+                        cfg,
+                        seed,
+                        width,
+                        height,
+                        effectiveWidth,
+                        effectiveHeight,
+                        image,
+                        mask,
+                        referenceImages,
+                        denoiseStrength,
+                        useOpenCL,
+                        scheduler,
+                        aspectRatio,
+                        ultrafix,
+                        ultrafixTileSize,
+                        backendHost,
+                        next,
+                    )
+                    // The re-issued run owns the rest of the lifecycle; leaving
+                    // here also skips the stopSelf() at the end of this block,
+                    // which would tear the screen down mid-retry.
+                    return@withContext
+                }
+                Log.w("GenerationService", "backend did not come back; reporting failure")
+                updateState(
+                    GenerationState.Error(
+                        this@BackgroundGenerationService.getString(
+                            R.string.backend_retry_failed,
+                            next,
+                        ),
+                    ),
+                )
             } else {
                 Log.e("GenerationService", "generation error", e)
                 // A crashed backend shows up here as a bare EOFException whose

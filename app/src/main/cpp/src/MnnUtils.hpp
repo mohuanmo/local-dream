@@ -151,12 +151,28 @@ inline const char *mnnBackendName(bool use_opencl, bool use_vulkan) {
   return use_vulkan ? "vulkan" : "opencl";
 }
 
+// System-wide free memory from /proc/meminfo (MemAvailable, in kB); 0 when it
+// cannot be read. Shared by the memory log and the Vulkan pre-flight check.
+inline long long mnnMemAvailableKb() {
+  long long availKb = 0;
+  if (FILE *f = std::fopen("/proc/meminfo", "r")) {
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) {
+      if (std::strncmp(line, "MemAvailable:", 13) == 0) {
+        availKb = std::atoll(line + 13);
+        break;
+      }
+    }
+    std::fclose(f);
+  }
+  return availKb;
+}
+
 // One line of process footprint per checkpoint (current RSS and the high-water
 // mark) so a log shows how far memory had climbed before a crash. Worth having
 // per backend: MNN's Vulkan path copies every weight into device memory, while
 // OpenCL can zero-copy them out of the mmapped file, so the two peaks differ a
-// lot -- measuring beats guessing. Reads /proc/self/status, which needs no
-// permission and costs nothing measurable.
+// lot -- measuring beats guessing. Reads /proc, which needs no permission.
 inline void mnnLogMemory(const char *stage, const char *backend) {
   long rssKb = 0;
   long hwmKb = 0;
@@ -170,8 +186,9 @@ inline void mnnLogMemory(const char *stage, const char *backend) {
     }
     std::fclose(f);
   }
-  std::printf("[MEM] %-22s %-6s rss=%4ldMB peak=%4ldMB\n", stage, backend,
-              rssKb / 1024, hwmKb / 1024);
+  const long long availKb = mnnMemAvailableKb();
+  std::printf("[MEM] %-22s %-6s rss=%4ldMB peak=%4ldMB avail=%4lldMB\n", stage,
+              backend, rssKb / 1024, hwmKb / 1024, availKb / 1024);
 }
 
 // Pre-flight free-memory check for a Vulkan run. MNN's Vulkan backend copies
