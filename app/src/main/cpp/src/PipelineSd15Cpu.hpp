@@ -118,6 +118,7 @@ class PipelineSd15Cpu : public Pipeline {
   }
 
   void beginDenoise(const GenerationRequest &req) override {
+    if (req.use_opencl && req.use_vulkan) mnnRequireMemoryForVulkan(unet_path_);
     unet_interpreter_ = createMnnInterpreterMmap(unet_path_.c_str());
     if (!unet_interpreter_)
       throw std::runtime_error(

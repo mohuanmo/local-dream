@@ -174,6 +174,47 @@ inline void mnnLogMemory(const char *stage, const char *backend) {
               rssKb / 1024, hwmKb / 1024);
 }
 
+// Pre-flight free-memory check for a Vulkan run. MNN's Vulkan backend copies
+// every weight into device memory and offers no way around it: no zero-copy
+// import (no VK_EXT_external_memory_host usage anywhere in it, unlike OpenCL's
+// MmapPool), no int8 ops, and it ignores BackendConfig::Memory_Low entirely.
+// So a Vulkan run costs roughly the model size *again*. The failure mode
+// otherwise is an OOM SIGKILL with no log, so refuse up front with something
+// readable instead. The estimate is deliberately crude; it only has to be
+// conservative enough to catch the case that actually hurts.
+inline void mnnRequireMemoryForVulkan(const std::string &model_path) {
+  std::error_code ec;
+  auto modelBytes = std::filesystem::file_size(model_path, ec);
+  if (ec) return; // Unknown size: don't block the run.
+
+  long long availKb = 0;
+  if (FILE *f = std::fopen("/proc/meminfo", "r")) {
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) {
+      if (std::strncmp(line, "MemAvailable:", 13) == 0) {
+        availKb = std::atoll(line + 13);
+        break;
+      }
+    }
+    std::fclose(f);
+  }
+  const long long modelKb = (long long)(modelBytes / 1024);
+  // The extra device copy plus room for activations and the runtime.
+  const long long needKb = (long long)(modelKb * 1.2) + 300 * 1024;
+  std::printf("[MEM] vulkan-preflight model=%lldMB need=%lldMB available=%lldMB\n",
+              modelKb / 1024, needKb / 1024, availKb / 1024);
+  if (availKb <= 0 || availKb >= needKb) return;
+
+  char message[512];
+  std::snprintf(message, sizeof(message),
+                "Vulkan needs about %lldMB of free memory for this model (its "
+                "weights are copied into GPU memory, not shared) but only "
+                "%lldMB is available. Switch the GPU backend to OpenCL, or use "
+                "a smaller model.",
+                needKb / 1024, availKb / 1024);
+  throw std::runtime_error(message);
+}
+
 // Whether MNN's Vulkan backend is really available. Its registrar uses
 // needCheck=true, so the lookup constructs (and immediately destroys) a Vulkan
 // runtime -- far too expensive to repeat per session, hence the cached result.
