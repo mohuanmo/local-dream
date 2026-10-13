@@ -221,6 +221,11 @@
     <string name="mnn_precision_level_hint">16 位（fp16）：更快、更省显存，可能有轻微数值误差（默认）；32 位（fp32）：更精确、更慢。仅对 GPU 生效——CPU 的 fp16 曾导致画面全白/全黑，已固定为 32 位。切换后需重启后端。</string>
     <string name="mnn_precision_fp16">16 位（快）</string>
     <string name="mnn_precision_fp32">32 位（准）</string>
+    <string name="keep_backend_alive">后端常驻（推荐）</string>
+    <string name="keep_backend_alive_hint">开：离开生成页后仍保留后端进程与常驻通知约 30 分钟。App 因此不会掉进 cached 状态——系统与厂商省电策略就很难在「内存还够」时把它清掉；下次生成也无需重新加载模型、重新枚举内核。关：1.5 秒后立即释放，省内存但更容易被清理。</string>
+    <string name="battery_optimization">电池优化白名单</string>
+    <string name="battery_optimization_hint">打开系统设置，把本应用设为「不优化」。厂商的省电策略常以此为依据清理后台进程。</string>
+    <string name="signal_sigkill_not_oom">注意：当时内存并不紧张。Android 12+ 会限制 App 拉起的子进程（后端正是这样一个进程），厂商省电策略也会清理后台。可在开发者选项里开启「禁用子进程限制」（Android 13+），或通过 adb 执行：settings put global settings_enable_monitor_phantom_procs false</string>
 
     <!-- Parameter Share -->
     <string name="share">分享</string>

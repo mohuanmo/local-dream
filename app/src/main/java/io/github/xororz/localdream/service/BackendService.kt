@@ -87,6 +87,17 @@ class BackendService : Service() {
         // reuse/latency, never correctness: a slower re-entry just starts fresh.
         private const val IDLE_GRACE_MS = 1500L
 
+        // Grace window when the keep-alive preference is on: long enough to
+        // cover "wander off and come back", short enough that a forgotten
+        // backend does not hold a few hundred MB of weights forever.
+        private const val KEEP_ALIVE_GRACE_MS = 30 * 60 * 1000L
+
+        // Relaunching a backend the system killed. Bounded, because a backend
+        // that dies for its own reasons (a Vulkan OOM, say) would otherwise be
+        // restarted forever; the counter is reset when the user starts one.
+        private const val MAX_AUTO_RESTARTS = 2
+        private const val AUTO_RESTART_DELAY_MS = 2000L
+
         const val ACTION_STOP = "io.github.xororz.localdream.STOP_GENERATION"
         const val ACTION_RESTART = "io.github.xororz.localdream.RESTART_BACKEND"
 
@@ -282,6 +293,9 @@ class BackendService : Service() {
         idleStopJob?.cancel()
         idleStopJob = null
         desired = config
+        // A user-initiated start resets the auto-restart budget, so a later
+        // system kill gets another chance to recover.
+        autoRestarts = 0
         reconcile(forceRestart)
     }
 
@@ -292,7 +306,16 @@ class BackendService : Service() {
         desired = null
         idleStopJob?.cancel()
         idleStopJob = serviceScope.launch {
-            delay(IDLE_GRACE_MS)
+            // Keep-alive holds the process -- and with it this foreground
+            // service -- through the long grace, so the app never falls back to
+            // the cached state where the system may reclaim it freely.
+            delay(
+                if (NativeCore.keepBackendAlive(this@BackendService)) {
+                    KEEP_ALIVE_GRACE_MS
+                } else {
+                    IDLE_GRACE_MS
+                },
+            )
             // A re-entry during the delay normally cancels us. The startId guard
             // closes the remaining edge where a new command's onStartCommand
             // raced in just as the grace fired: stopSelfResult() refuses to stop
@@ -798,8 +821,52 @@ class BackendService : Service() {
      * the process was killed by a signal, and which signal decides whether this
      * was the GPU driver (SIGSEGV) or the system reclaiming memory (SIGKILL).
      */
+    // --- keeping a system-killed backend alive ------------------------------
+
+    // How many times this service has relaunched the backend by itself since
+    // the user last started one.
+    private var autoRestarts = 0
+
+    /**
+     * Relaunches the backend after the system killed it. Bounded by
+     * MAX_AUTO_RESTARTS on purpose: the causes worth recovering from (a trim of
+     * an app's child processes, a vendor battery saver reclaiming a background
+     * app) are transient, while a backend that dies for its own reasons -- a
+     * Vulkan run running out of memory, say -- would be relaunched forever.
+     */
+    private fun scheduleAutoRestart() {
+        if (autoRestarts >= MAX_AUTO_RESTARTS) {
+            Log.i(TAG, "auto-restart budget spent, leaving the backend down")
+            return
+        }
+        autoRestarts++
+        val attempt = autoRestarts
+        serviceScope.launch {
+            delay(AUTO_RESTART_DELAY_MS * attempt)
+            if (desired != null) {
+                Log.i(TAG, "system ended the backend, restarting (attempt $attempt)")
+                backendLogLine("!!! system ended the backend; restarting (attempt $attempt)")
+                reconcile(forceRestart = true)
+            }
+        }
+    }
+
+    /**
+     * Whether the system is short on memory right now. Decides how a SIGKILL is
+     * described: being OOM-killed and being reclaimed as a background process
+     * look identical in the exit code but need completely different advice.
+     */
+    private fun systemIsLowOnMemory(): Boolean = try {
+        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        info.lowMemory
+    } catch (e: Exception) {
+        true // Unknown: keep the OOM wording, it is the commoner cause.
+    }
+
     private fun describeBackendExit(code: Int): String {
-        val base = if (code <= 128) {
+        var base = if (code <= 128) {
             getString(R.string.backend_exited, code)
         } else {
             val signal = code - 128
@@ -813,6 +880,13 @@ class BackendService : Service() {
                 else -> "signal $signal"
             }
             getString(R.string.backend_crashed, signal, name)
+        }
+        // A signal 9 with plenty of free memory is almost never about memory:
+        // Android 12+ trims the child processes an app spawns, and this backend
+        // *is* one, so say what to do about it instead of sending the user off to
+        // free up RAM that was never the problem.
+        if (code == 137 && !systemIsLowOnMemory()) {
+            base += "\n" + getString(R.string.signal_sigkill_not_oom)
         }
         val path = lastBackendLogPath
         return if (path == null) base else "$base\n" + getString(R.string.backend_log_at, path)
@@ -862,6 +936,13 @@ class BackendService : Service() {
                 // memory", and the user only ever sees this string.
                 val reason = describeBackendExit(exitCode)
                 val fallback = fallBackFromImageMemory(exitCode)
+                // A killed-but-not-OOM backend is worth another try: with
+                // keep-alive on, the user asked for this process to stay up, and
+                // the usual cause is the system reclaiming it rather than a fault
+                // of its own.
+                if (exitCode == 137 && NativeCore.keepBackendAlive(this) && desired != null) {
+                    scheduleAutoRestart()
+                }
                 updateState(
                     BackendState.Error(
                         if (fallback == null) reason else "$reason\n$fallback",

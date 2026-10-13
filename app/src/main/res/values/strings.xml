@@ -230,6 +230,11 @@
     <string name="mnn_precision_level_hint">16-bit (fp16): faster and lighter on memory, with slight numerical error (default). 32-bit (fp32): more accurate, slower. GPU only — the CPU path stays fp32 because fp16 there produced solid white/black frames. Restart the backend after switching.</string>
     <string name="mnn_precision_fp16">16-bit (fast)</string>
     <string name="mnn_precision_fp32">32-bit (accurate)</string>
+    <string name="keep_backend_alive">Keep the backend resident (recommended)</string>
+    <string name="keep_backend_alive_hint">On: the backend process and its notification stay for about 30 minutes after you leave the generation screen, so the app never drops into the cached state where Android -- and vendor battery savers -- may reclaim it while memory is still free. The next run also skips reloading the model and re-enumerating kernels. Off: released after 1.5s, which frees memory sooner but is much easier to kill.</string>
+    <string name="battery_optimization">Battery optimisation whitelist</string>
+    <string name="battery_optimization_hint">Opens the system settings: set this app to \"Not optimised\". Vendor battery savers commonly consult this list when reclaiming background apps.</string>
+    <string name="signal_sigkill_not_oom">Note: memory was not tight at the time. Android 12+ restricts child processes spawned by an app -- which this backend is -- and vendor battery savers reclaim background apps as well. Enable \"Disable child process restrictions\" in Developer options (Android 13+), or over ADB: settings put global settings_enable_monitor_phantom_procs false</string>
 
     <!-- Parameter Share -->
     <string name="share">Share</string>

@@ -57,6 +57,22 @@ object NativeCore {
         }
 
     /**
+     * SharedPreferences key: keep the backend process (and this app's foreground
+     * status) alive for a while after the last use instead of tearing both down
+     * 1.5s after the model screen closes. A live foreground service keeps the
+     * app out of the cached state, which is what lets Android -- and vendor
+     * battery savers -- drop the backend "while there is still memory"; Android
+     * 12+ additionally trims child processes of background apps, which is
+     * exactly what this backend is.
+     */
+    const val PREF_KEEP_BACKEND_ALIVE = "keep_backend_alive"
+
+    /** Whether to hold the backend alive between generations. */
+    fun keepBackendAlive(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(PREF_KEEP_BACKEND_ALIVE, true)
+
+    /**
      * SharedPreferences key holding the GPU compute precision: "fp16" (default,
      * half arithmetic) or "fp32" (full precision). The CPU path always runs
      * fp32: Precision_Low there enables arm82 fp16, which corrupted the CLIP

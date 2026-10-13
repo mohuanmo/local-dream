@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -1486,6 +1487,14 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         },
                                     )
                                 }
+                                var keepBackendAlive by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(
+                                            NativeCore.PREF_KEEP_BACKEND_ALIVE,
+                                            true,
+                                        ),
+                                    )
+                                }
                                 var enableTagAutocomplete by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_tag_autocomplete", true)
@@ -1926,6 +1935,42 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         mnnPrecision = it
                                         preferences.edit {
                                             putString(NativeCore.PREF_PRECISION, it)
+                                        }
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                // Keeping the process -- and with it this app's
+                                // foreground status -- alive is what keeps the
+                                // backend out of the cached state where both
+                                // Android and vendor battery savers may drop it
+                                // while memory is still free.
+                                SwitchSettingRow(
+                                    title = stringResource(R.string.keep_backend_alive),
+                                    description = stringResource(R.string.keep_backend_alive_hint),
+                                    checked = keepBackendAlive,
+                                    onCheckedChange = {
+                                        keepBackendAlive = it
+                                        preferences.edit {
+                                            putBoolean(NativeCore.PREF_KEEP_BACKEND_ALIVE, it)
+                                        }
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                NavSettingRow(
+                                    title = stringResource(R.string.battery_optimization),
+                                    description = stringResource(R.string.battery_optimization_hint),
+                                    onClick = {
+                                        runCatching {
+                                            LocalContext.current.startActivity(
+                                                android.content.Intent(
+                                                    android.provider.Settings
+                                                        .ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS,
+                                                ),
+                                            )
                                         }
                                     },
                                 )
@@ -3955,6 +4000,40 @@ private fun SegmentedSettingRow(
                 }
             }
         }
+    }
+}
+
+/** A settings row that opens something instead of toggling a value. */
+@Composable
+private fun NavSettingRow(
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
