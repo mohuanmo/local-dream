@@ -222,7 +222,7 @@
     <string name="mnn_vulkan_backend">Use the Vulkan backend (experimental)</string>
     <string name="mnn_vulkan_backend_hint">⚠️ Experimental, off by default: runs GPU work through Vulkan instead of OpenCL. Not well exercised on these graphs — some devices/drivers give black frames or crashes, and it can be slower than OpenCL. Only applies when the device is set to GPU; the image/buffer memory setting above does not affect Vulkan; restart the backend after switching.</string>
     <string name="mnn_tuning_level">Kernel optimisation effort</string>
-    <string name="mnn_tuning_level_hint">How long the enumeration may spend finding the best kernels for this resolution. Fast: prefer MNN's heuristic and skip enumeration when it matches (quickest first run). Default: full enumeration (MNN's own default). Slow: search hardest (slowest first run, possibly faster afterwards). OpenCL only; restart the backend after switching.</string>
+    <string name="mnn_tuning_level_hint">How long the enumeration may spend finding the best kernels for this resolution. Fast: prefer MNN\'s heuristic and skip enumeration when it matches (quickest first run). Default: full enumeration (MNN\'s own default). Slow: search hardest (slowest first run, possibly faster afterwards). OpenCL only; restart the backend after switching.</string>
     <string name="mnn_tuning_fast">Fast</string>
     <string name="mnn_tuning_default">Default</string>
     <string name="mnn_tuning_deep">Slow</string>
