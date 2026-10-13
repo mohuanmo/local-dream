@@ -212,6 +212,11 @@
     <string name="mnn_memory_image_hint">开：运行 OpenCL 图像（纹理）内存版本，在高通 GPU 上通常更快。关：运行 OpenCL 缓冲内存版本，若图像内存导致画面异常可切换到此项。下次启动后端时生效。</string>
     <string name="mnn_vulkan_backend">使用 Vulkan 后端（实验性）</string>
     <string name="mnn_vulkan_backend_hint">⚠️ 实验性，默认关闭：把 GPU 计算从 OpenCL 换成 Vulkan。未经充分验证——部分设备/驱动可能出现黑图或崩溃，也可能反而比 OpenCL 慢。仅在设备选「GPU」时生效；上面的内存模式（图像/缓冲）开关对 Vulkan 不起作用；切换后需重启后端。</string>
+    <string name="mnn_tuning_level">算子优化力度（枚举）</string>
+    <string name="mnn_tuning_level_hint">枚举时花多少时间寻找该分辨率的最优内核。极速：优先用启发式，命中就跳过枚举（首次最快）；默认：完整枚举（MNN 默认，推荐）；慢：搜索更深（首次最慢，之后可能更快）。仅对 OpenCL 生效；切换后需重启后端。</string>
+    <string name="mnn_tuning_fast">极速</string>
+    <string name="mnn_tuning_default">默认</string>
+    <string name="mnn_tuning_deep">慢</string>
 
     <!-- Parameter Share -->
     <string name="share">分享</string>

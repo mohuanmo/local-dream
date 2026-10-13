@@ -141,11 +141,12 @@ class PipelineSdxlMnn : public PipelineSdxl {
     config.numThread = 4;
     bool tuning = false;
     if (config.type == MNN_FORWARD_OPENCL) {
-      // Matches MnnUtils.hpp: wide tuning, memory mode chosen at build time.
+      // Matches MnnUtils.hpp: memory mode chosen at build time, tuning effort
+      // from the Settings choice.
 #if SDCORE_GPU_MEMORY_IMAGE
-      config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
+      config.mode = MNN_GPU_MEMORY_IMAGE | mnnTuningFromLevel(req.tuning_level);
 #else
-      config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_WIDE;
+      config.mode = MNN_GPU_MEMORY_BUFFER | mnnTuningFromLevel(req.tuning_level);
 #endif
       // Memory-mode tag, as in MnnUtils.hpp, so the two builds keep
       // separate tuning caches.

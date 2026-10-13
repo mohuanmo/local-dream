@@ -1458,6 +1458,21 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         ) == NativeCore.GPU_BACKEND_VULKAN,
                                     )
                                 }
+                                var mnnTuningLevel by remember {
+                                    mutableStateOf(
+                                        when (
+                                            val level = preferences.getString(
+                                                NativeCore.PREF_TUNING_LEVEL,
+                                                NativeCore.TUNING_DEFAULT,
+                                            )
+                                        ) {
+                                            NativeCore.TUNING_FAST,
+                                            NativeCore.TUNING_DEEP,
+                                            -> level
+                                            else -> NativeCore.TUNING_DEFAULT
+                                        },
+                                    )
+                                }
                                 var enableTagAutocomplete by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_tag_autocomplete", true)
@@ -1854,6 +1869,25 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                                     NativeCore.GPU_BACKEND_OPENCL
                                                 },
                                             )
+                                        }
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                // Option-style (segmented), because this is a
+                                // three-way choice rather than on/off.
+                                TuningLevelSettingRow(
+                                    title = stringResource(R.string.mnn_tuning_level),
+                                    description = stringResource(R.string.mnn_tuning_level_hint),
+                                    fastLabel = stringResource(R.string.mnn_tuning_fast),
+                                    defaultLabel = stringResource(R.string.mnn_tuning_default),
+                                    deepLabel = stringResource(R.string.mnn_tuning_deep),
+                                    selected = mnnTuningLevel,
+                                    onSelect = {
+                                        mnnTuningLevel = it
+                                        preferences.edit {
+                                            putString(NativeCore.PREF_TUNING_LEVEL, it)
                                         }
                                     },
                                 )
@@ -3834,6 +3868,70 @@ private fun SwitchSettingRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
         )
+    }
+}
+
+/**
+ * Option-style setting row: a segmented control (three choices, not a switch).
+ * Used for the kernel-enumeration effort, which has no sensible "off".
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun TuningLevelSettingRow(
+    title: String,
+    description: String,
+    fastLabel: String,
+    defaultLabel: String,
+    deepLabel: String,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween,
+            ),
+        ) {
+            ToggleButton(
+                checked = selected == NativeCore.TUNING_FAST,
+                onCheckedChange = { if (it) onSelect(NativeCore.TUNING_FAST) },
+                shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(fastLabel)
+            }
+            ToggleButton(
+                checked = selected == NativeCore.TUNING_DEFAULT,
+                onCheckedChange = { if (it) onSelect(NativeCore.TUNING_DEFAULT) },
+                shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(defaultLabel)
+            }
+            ToggleButton(
+                checked = selected == NativeCore.TUNING_DEEP,
+                onCheckedChange = { if (it) onSelect(NativeCore.TUNING_DEEP) },
+                shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(deepLabel)
+            }
+        }
     }
 }
 

@@ -34,6 +34,28 @@ object NativeCore {
     const val GPU_BACKEND_OPENCL = "opencl"
     const val GPU_BACKEND_VULKAN = "vulkan"
 
+    /**
+     * SharedPreferences key holding the OpenCL kernel-enumeration effort:
+     * "fast" | "default" | "deep", mapped to MNN's tuning levels by the backend
+     * (mnnTuningFromLevel). Only the OpenCL backend enumerates, so this has no
+     * effect on the Vulkan or CPU paths.
+     */
+    const val PREF_TUNING_LEVEL = "gpu_tuning_level"
+
+    const val TUNING_FAST = "fast"
+    const val TUNING_DEFAULT = "default"
+    const val TUNING_DEEP = "deep"
+
+    /** The configured enumeration effort, defaulting to MNN's own default. */
+    fun tuningLevel(context: Context): String =
+        when (
+            val level = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(PREF_TUNING_LEVEL, TUNING_DEFAULT)
+        ) {
+            TUNING_FAST, TUNING_DEEP -> level
+            else -> TUNING_DEFAULT
+        }
+
     private const val PREFS = "app_prefs"
     private const val IMAGE_NAME = "libstable_diffusion_core_image.so"
     private const val BUFFER_NAME = "libstable_diffusion_core_buffer.so"

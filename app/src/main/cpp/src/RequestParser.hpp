@@ -37,6 +37,9 @@ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
   // GPU API selection (only meaningful together with use_opencl). Anything that
   // is not "vulkan" keeps the OpenCL path.
   req.use_vulkan = json.value("gpu_backend", "opencl") == "vulkan";
+  // OpenCL kernel-enumeration effort (Settings). Unknown values fall back to
+  // MNN's default inside mnnTuningFromLevel.
+  req.tuning_level = json.value("tuning_level", "default");
   req.show_diffusion_process = json.value("show_diffusion_process", false);
   req.show_diffusion_stride = json.value("show_diffusion_stride", 1);
   req.seed = json.value(

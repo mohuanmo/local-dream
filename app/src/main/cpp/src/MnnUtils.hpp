@@ -105,6 +105,20 @@ inline MnnTuningNotify &mnnTuningNotify() {
   return notify;
 }
 
+// Maps the Settings choice to MNN's OpenCL tuning level:
+//   fast   -> MNN_GPU_TUNING_FAST   try the per-kernel heuristic first and skip
+//                                   the enumeration when it matches; the GEMM
+//                                   tuning is skipped outright. Fastest first
+//                                   run, and what upstream shipped.
+//   deep   -> MNN_GPU_TUNING_HEAVY  search the hardest (slowest first run).
+//   default-> MNN_GPU_TUNING_WIDE   MNN's own default.
+// Only the OpenCL backend enumerates, so this has no effect on Vulkan or CPU.
+inline int mnnTuningFromLevel(const std::string &level) {
+  if (level == "fast") return MNN_GPU_TUNING_FAST;
+  if (level == "deep") return MNN_GPU_TUNING_HEAVY;
+  return MNN_GPU_TUNING_WIDE;
+}
+
 // Session creation options shared by every MNN model in the pipeline.
 // CPU: 4 threads, low-memory, high-power, default precision.
 // OpenCL: wide tuning + low precision, plus an on-disk tuning cache when

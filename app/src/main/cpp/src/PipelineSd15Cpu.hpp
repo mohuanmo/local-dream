@@ -250,9 +250,9 @@ class PipelineSd15Cpu : public Pipeline {
     opts.use_vulkan = req.use_vulkan;
     opts.stage = stage;
     opts.width = req.width;
-    // gpu_tuning stays at MnnSessionOptions' default (WIDE). Set it to
-    // MNN_GPU_TUNING_NORMAL or MNN_GPU_TUNING_FAST here to trade kernel quality
-    // for a cheaper first run -- per stage if needed.
+    // Enumeration effort, from the Settings choice (only the OpenCL backend
+    // enumerates; Vulkan and CPU ignore it).
+    opts.gpu_tuning = mnnTuningFromLevel(req.tuning_level);
     if (req.use_opencl) {
       auto cache_dir = ensureCacheDir(model_dir_);
       // The memory-mode tag keeps the IMAGE and BUFFER builds from sharing a
