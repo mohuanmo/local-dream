@@ -10,6 +10,9 @@
 #include <MNN/Interpreter.hpp>
 #include <filesystem>
 #include <functional>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -142,6 +145,35 @@ inline int mnnPrecisionFromLevel(const std::string &level) {
   return MNN::BackendConfig::Precision_Low;
 }
 
+// Backend label for the memory log below.
+inline const char *mnnBackendName(bool use_opencl, bool use_vulkan) {
+  if (!use_opencl) return "cpu";
+  return use_vulkan ? "vulkan" : "opencl";
+}
+
+// One line of process footprint per checkpoint (current RSS and the high-water
+// mark) so a log shows how far memory had climbed before a crash. Worth having
+// per backend: MNN's Vulkan path copies every weight into device memory, while
+// OpenCL can zero-copy them out of the mmapped file, so the two peaks differ a
+// lot -- measuring beats guessing. Reads /proc/self/status, which needs no
+// permission and costs nothing measurable.
+inline void mnnLogMemory(const char *stage, const char *backend) {
+  long rssKb = 0;
+  long hwmKb = 0;
+  if (FILE *f = std::fopen("/proc/self/status", "r")) {
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) {
+      if (std::strncmp(line, "VmRSS:", 6) == 0)
+        rssKb = std::atol(line + 6);
+      else if (std::strncmp(line, "VmHWM:", 6) == 0)
+        hwmKb = std::atol(line + 6);
+    }
+    std::fclose(f);
+  }
+  std::printf("[MEM] %-22s %-6s rss=%4ldMB peak=%4ldMB\n", stage, backend,
+              rssKb / 1024, hwmKb / 1024);
+}
+
 // Whether MNN's Vulkan backend is really available. Its registrar uses
 // needCheck=true, so the lookup constructs (and immediately destroys) a Vulkan
 // runtime -- far too expensive to repeat per session, hence the cached result.
@@ -269,10 +301,13 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
   }
   backendConfig.power = MNN::BackendConfig::Power_High;
   config.backendConfig = &backendConfig;
+  const char *backend = mnnBackendName(opts.use_opencl, opts.use_vulkan);
   if (tuning && mnnTuningNotify())
     mnnTuningNotify()(opts.stage, opts.width, true);
   if (tuning) mnnPurgeHeap();
+  mnnLogMemory("session-create:begin", backend);
   MNN::Session *session = interpreter->createSession(config);
+  mnnLogMemory("session-create:end", backend);
   if (tuning && mnnTuningNotify())
     mnnTuningNotify()(opts.stage, opts.width, false);
   return session;

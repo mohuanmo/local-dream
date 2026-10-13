@@ -142,8 +142,11 @@ class PipelineSd15Cpu : public Pipeline {
     unet_interpreter_->resizeTensor(enc, {batch, tokens, text_embedding_size});
     unet_interpreter_->resizeSession(unet_session_);
     if (req.use_opencl) unet_interpreter_->updateCacheFile(unet_session_);
+    mnnLogMemory("unet:resized", mnnBackendName(req.use_opencl, req.use_vulkan));
 
     unet_interpreter_->releaseModel();
+    mnnLogMemory("unet:model-released",
+                 mnnBackendName(req.use_opencl, req.use_vulkan));
   }
 
   void runUnetStep(const GenerationRequest &req, const float *latents_batch2,
@@ -215,7 +218,10 @@ class PipelineSd15Cpu : public Pipeline {
     interpreter->resizeTensor(input, {1, 4, req.height / 8, req.width / 8});
     interpreter->resizeSession(session);
     if (req.use_opencl) interpreter->updateCacheFile(session);
+    mnnLogMemory("vae_dec:resized", mnnBackendName(req.use_opencl, req.use_vulkan));
     interpreter->releaseModel();
+    mnnLogMemory("vae_dec:model-released",
+                 mnnBackendName(req.use_opencl, req.use_vulkan));
 
     auto input_nchw_tensor = new MNN::Tensor(input, MNN::Tensor::CAFFE);
     auto output = interpreter->getSessionOutput(session, "sample");
