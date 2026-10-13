@@ -34,6 +34,9 @@ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
   req.cfg = json.value("cfg", 7.5f);
   req.scheduler_type = json.value("scheduler", "dpm");
   req.use_opencl = json.value("use_opencl", false);
+  // GPU API selection (only meaningful together with use_opencl). Anything that
+  // is not "vulkan" keeps the OpenCL path.
+  req.use_vulkan = json.value("gpu_backend", "opencl") == "vulkan";
   req.show_diffusion_process = json.value("show_diffusion_process", false);
   req.show_diffusion_stride = json.value("show_diffusion_stride", 1);
   req.seed = json.value(

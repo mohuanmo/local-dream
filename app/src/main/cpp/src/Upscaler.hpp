@@ -165,7 +165,8 @@ inline xt::xarray<uint8_t> upscaleWithMnn(
              ? model_path
              : cache_dir + "/" +
                    std::filesystem::path(model_path).filename().string()) +
-        ".mnnc." + mnnGpuMemoryTag();
+        // The upscaler still runs on OpenCL only; see the GPU-backend setting.
+        ".mnnc." + mnnGpuCacheTag(/*use_vulkan=*/false);
   }
 
   auto session = createMnnSession(interpreter.get(), opts);

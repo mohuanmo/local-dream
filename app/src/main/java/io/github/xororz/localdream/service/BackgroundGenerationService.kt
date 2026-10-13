@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.createBitmap
 import io.github.xororz.localdream.R
+import io.github.xororz.localdream.data.NativeCore
 import io.github.xororz.localdream.utils.Http
 import java.io.BufferedReader
 import java.io.File
@@ -321,6 +322,16 @@ class BackgroundGenerationService : Service() {
                 put("height", height)
                 put("denoise_strength", denoiseStrength)
                 put("use_opencl", useOpenCL)
+                // Which GPU API to use (only read by the backend when
+                // use_opencl is set). Global setting, like the memory mode.
+                put(
+                    "gpu_backend",
+                    if (NativeCore.prefersVulkan(applicationContext)) {
+                        NativeCore.GPU_BACKEND_VULKAN
+                    } else {
+                        NativeCore.GPU_BACKEND_OPENCL
+                    },
+                )
                 put("scheduler", scheduler)
                 // Ultrafix never streams previews: each one would tile-decode
                 // the full image (the backend rejects it as well).

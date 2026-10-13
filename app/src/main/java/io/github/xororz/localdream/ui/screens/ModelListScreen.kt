@@ -1450,6 +1450,14 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         ),
                                     )
                                 }
+                                var mnnVulkanBackend by remember {
+                                    mutableStateOf(
+                                        preferences.getString(
+                                            NativeCore.PREF_GPU_BACKEND,
+                                            NativeCore.GPU_BACKEND_OPENCL,
+                                        ) == NativeCore.GPU_BACKEND_VULKAN,
+                                    )
+                                }
                                 var enableTagAutocomplete by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_tag_autocomplete", true)
@@ -1821,6 +1829,31 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         mnnMemoryImage = it
                                         preferences.edit {
                                             putBoolean(NativeCore.PREF_MEMORY_IMAGE, it)
+                                        }
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                // Experimental: swap the GPU API MNN runs on. Off
+                                // by default, and labelled as such, because the
+                                // Vulkan backend is far less exercised than
+                                // OpenCL for these graphs.
+                                SwitchSettingRow(
+                                    title = stringResource(R.string.mnn_vulkan_backend),
+                                    description = stringResource(R.string.mnn_vulkan_backend_hint),
+                                    checked = mnnVulkanBackend,
+                                    onCheckedChange = {
+                                        mnnVulkanBackend = it
+                                        preferences.edit {
+                                            putString(
+                                                NativeCore.PREF_GPU_BACKEND,
+                                                if (it) {
+                                                    NativeCore.GPU_BACKEND_VULKAN
+                                                } else {
+                                                    NativeCore.GPU_BACKEND_OPENCL
+                                                },
+                                            )
                                         }
                                     },
                                 )

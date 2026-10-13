@@ -219,6 +219,8 @@
     <string name="tuning_gpu_kernels_pct">Enumerating GPU kernels (pass %1$d) · %2$d kernels done · ~%3$d%%</string>
     <string name="mnn_memory_image">Use OpenCL image memory</string>
     <string name="mnn_memory_image_hint">On: run the OpenCL image (texture) memory build, usually faster on Qualcomm GPUs. Off: run the OpenCL buffer memory build, the safer fallback if image memory produces corrupted output. Applies the next time the backend starts.</string>
+    <string name="mnn_vulkan_backend">Use the Vulkan backend (experimental)</string>
+    <string name="mnn_vulkan_backend_hint">⚠️ Experimental, off by default: runs GPU work through Vulkan instead of OpenCL. Not well exercised on these graphs — some devices/drivers give black frames or crashes, and it can be slower than OpenCL. Only applies when the device is set to GPU; the image/buffer memory setting above does not affect Vulkan; restart the backend after switching.</string>
 
     <!-- Parameter Share -->
     <string name="share">Share</string>

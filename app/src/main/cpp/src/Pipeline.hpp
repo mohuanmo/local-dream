@@ -55,6 +55,9 @@ struct GenerationRequest {
   unsigned seed = 0;
   std::string scheduler_type = "dpm";
   bool use_opencl = false;
+  // Which GPU API to use when use_opencl ("run on the GPU") is set. Vulkan is
+  // an opt-in experiment; everything not set to it stays on OpenCL.
+  bool use_vulkan = false;
   bool show_diffusion_process = false;
   int show_diffusion_stride = 1;
   int width = 512;

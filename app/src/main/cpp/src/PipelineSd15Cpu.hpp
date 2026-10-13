@@ -247,6 +247,7 @@ class PipelineSd15Cpu : public Pipeline {
                                    const char *stage) const {
     MnnSessionOptions opts;
     opts.use_opencl = req.use_opencl;
+    opts.use_vulkan = req.use_vulkan;
     opts.stage = stage;
     opts.width = req.width;
     // gpu_tuning stays at MnnSessionOptions' default (WIDE). Set it to
@@ -257,7 +258,7 @@ class PipelineSd15Cpu : public Pipeline {
       // The memory-mode tag keeps the IMAGE and BUFFER builds from sharing a
       // tuning cache that was produced for the other mode.
       opts.cache_file = (cache_dir.empty() ? model_dir_ : cache_dir) + "/" +
-                        stage + ".mnnc." + mnnGpuMemoryTag() + "." +
+                        stage + ".mnnc." + mnnGpuCacheTag(req.use_vulkan) + "." +
                         std::to_string(req.width);
     }
     return opts;

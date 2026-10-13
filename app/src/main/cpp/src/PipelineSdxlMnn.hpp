@@ -141,17 +141,16 @@ class PipelineSdxlMnn : public PipelineSdxl {
     config.numThread = 4;
     bool tuning = false;
     if (config.type == MNN_FORWARD_OPENCL) {
-      // Matches MnnUtils.hpp: NORMAL tuning (enumeration without WIDE's much
-      // larger GEMM candidate list), memory mode chosen at build time.
+      // Matches MnnUtils.hpp: wide tuning, memory mode chosen at build time.
 #if SDCORE_GPU_MEMORY_IMAGE
-      config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_NORMAL;
+      config.mode = MNN_GPU_MEMORY_IMAGE | MNN_GPU_TUNING_WIDE;
 #else
-      config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_NORMAL;
+      config.mode = MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_WIDE;
 #endif
       // Memory-mode tag, as in MnnUtils.hpp, so the two builds keep
       // separate tuning caches.
       const std::string cache =
-          model_dir_ + "/unet.mnnc." + mnnGpuMemoryTag();
+          model_dir_ + "/unet.mnnc." + mnnGpuCacheTag(req.use_vulkan);
       net.setCacheFile(cache.c_str());
       std::error_code ec;
       tuning = !std::filesystem::exists(cache, ec) ||

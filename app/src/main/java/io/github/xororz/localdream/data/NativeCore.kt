@@ -18,6 +18,22 @@ object NativeCore {
     /** SharedPreferences key: true = image memory, false = buffer memory. */
     const val PREF_MEMORY_IMAGE = "mnn_gpu_memory_image"
 
+    /**
+     * SharedPreferences key holding the GPU API used for "run on GPU": "opencl"
+     * (default) or "vulkan". Sent per request as `gpu_backend`; the OpenCL
+     * memory-mode and tuning options do not apply to the Vulkan backend, which
+     * has its own tuning cache and no kernel-enumeration pass.
+     */
+    const val PREF_GPU_BACKEND = "gpu_backend"
+
+    /** True when the experimental Vulkan GPU backend was selected. */
+    fun prefersVulkan(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(PREF_GPU_BACKEND, GPU_BACKEND_OPENCL) == GPU_BACKEND_VULKAN
+
+    const val GPU_BACKEND_OPENCL = "opencl"
+    const val GPU_BACKEND_VULKAN = "vulkan"
+
     private const val PREFS = "app_prefs"
     private const val IMAGE_NAME = "libstable_diffusion_core_image.so"
     private const val BUFFER_NAME = "libstable_diffusion_core_buffer.so"

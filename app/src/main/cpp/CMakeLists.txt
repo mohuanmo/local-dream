@@ -80,6 +80,14 @@ set(MNN_BUILD_FOR_ANDROID_COMMAND ON CACHE BOOL "" FORCE)
 set(MNN_USE_LOGCAT OFF CACHE BOOL "" FORCE)
 set(MNN_OPENCL ON CACHE BOOL "" FORCE)
 set(MNN_SUPPORT_TRANSFORMER_FUSE ON CACHE BOOL "" FORCE)
+# GPU backends: OpenCL is the default, Vulkan is the opt-in experiment exposed
+# in Settings. MNN dlopens the device's libvulkan.so through its own wrapper
+# (MNN_USE_SYSTEM_LIB stays off), so no Vulkan SDK is needed to build. The
+# Vulkan sources are chosen at compile time by MNN_VULKAN_IMAGE -- MNN's own
+# default, and unlike the OpenCL memory mode it cannot differ per executable
+# because both of ours link the same MNN.
+set(MNN_VULKAN ON CACHE BOOL "" FORCE)
+set(MNN_VULKAN_IMAGE ON CACHE BOOL "" FORCE)
 add_subdirectory(3rdparty/MNN)
 
 set(XTENSOR_USE_XSIMD ON)

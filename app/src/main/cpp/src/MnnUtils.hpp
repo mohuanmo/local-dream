@@ -79,9 +79,11 @@ inline MNN::Interpreter *createMnnInterpreterMmap(const char *path) {
 #define SDCORE_GPU_MEMORY_IMAGE 1
 #endif
 
-// Short tag mixed into the OpenCL tuning-cache file name so the two builds
-// never read each other's tuned kernels.
-inline const char *mnnGpuMemoryTag() {
+// Short tag mixed into the GPU tuning-cache file name so no two builds read
+// each other's tuned kernels: Vulkan stores a different cache format (MNN's
+// VKCache) than OpenCL, and the two OpenCL libraries differ in memory mode.
+inline const char *mnnGpuCacheTag(bool use_vulkan) {
+  if (use_vulkan) return "vk";
 #if SDCORE_GPU_MEMORY_IMAGE
   return "img";
 #else
@@ -130,6 +132,10 @@ struct MnnSessionOptions {
   // no memory argument for one over the other -- WIDE is simply the curated
   // pool. FAST, which upstream shipped, skips GEMM tuning entirely (LWS only).
   int gpu_tuning = MNN_GPU_TUNING_WIDE;
+  // Run the GPU work on MNN's Vulkan backend instead of OpenCL. Vulkan has its
+  // own tuning cache and no kernel-enumeration pass, so gpu_tuning and the
+  // memory-mode bits below do not apply to it.
+  bool use_vulkan = false;
 };
 
 // bionic declares mallopt() only for API 26+, while M_PURGE is defined at every
@@ -161,7 +167,16 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
   MNN::ScheduleConfig config;
   MNN::BackendConfig backendConfig;
   bool tuning = false;
-  if (opts.use_opencl) {
+  if (opts.use_opencl && opts.use_vulkan) {
+    // Vulkan: it keeps its own tuning cache (MNN's VKCache, verified by MNN on
+    // load), but unlike OpenCL it has no per-kernel enumeration pass -- so
+    // `tuning` stays false and the UI shows no enumeration indicator, which is
+    // accurate. The OpenCL memory-mode/tuning bits do not apply either.
+    if (!opts.cache_file.empty())
+      interpreter->setCacheFile(opts.cache_file.c_str());
+    config.type = MNN_FORWARD_VULKAN;
+    backendConfig.precision = MNN::BackendConfig::Precision_Low;
+  } else if (opts.use_opencl) {
     if (!opts.cache_file.empty()) {
       interpreter->setCacheFile(opts.cache_file.c_str());
       // A missing or empty cache means this session will run a tuning pass,
