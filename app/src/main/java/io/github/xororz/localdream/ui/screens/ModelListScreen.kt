@@ -1960,12 +1960,16 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )
+                                // Read the context in the composable scope: doing
+                                // it inside onClick would be a composable call
+                                // from a non-composable lambda.
+                                val navContext = LocalContext.current
                                 NavSettingRow(
                                     title = stringResource(R.string.battery_optimization),
                                     description = stringResource(R.string.battery_optimization_hint),
                                     onClick = {
                                         runCatching {
-                                            LocalContext.current.startActivity(
+                                            navContext.startActivity(
                                                 android.content.Intent(
                                                     android.provider.Settings
                                                         .ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS,

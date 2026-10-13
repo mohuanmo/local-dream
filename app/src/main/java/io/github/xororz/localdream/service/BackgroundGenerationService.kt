@@ -338,7 +338,9 @@ class BackgroundGenerationService : Service() {
         // 0 on the first attempt; bumped when a run is re-issued after the
         // backend died underneath it (see the catch below).
         attempt: Int = 0,
-    ) = withContext(Dispatchers.IO) {
+        // Explicit: this function calls itself when re-issuing a run, and Kotlin
+        // cannot infer the type of a recursive call without it.
+    ): Unit = withContext(Dispatchers.IO) {
         // Set once the complete event is fully handled; a socket teardown
         // racing the service shutdown after that point is not an error.
         var completed = false
