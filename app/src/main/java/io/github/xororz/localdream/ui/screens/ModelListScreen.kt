@@ -1473,6 +1473,19 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         },
                                     )
                                 }
+                                var mnnPrecision by remember {
+                                    mutableStateOf(
+                                        when (
+                                            preferences.getString(
+                                                NativeCore.PREF_PRECISION,
+                                                NativeCore.PRECISION_FP16,
+                                            )
+                                        ) {
+                                            NativeCore.PRECISION_FP32 -> NativeCore.PRECISION_FP32
+                                            else -> NativeCore.PRECISION_FP16
+                                        },
+                                    )
+                                }
                                 var enableTagAutocomplete by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_tag_autocomplete", true)
@@ -1877,17 +1890,42 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                 )
                                 // Option-style (segmented), because this is a
                                 // three-way choice rather than on/off.
-                                TuningLevelSettingRow(
+                                SegmentedSettingRow(
                                     title = stringResource(R.string.mnn_tuning_level),
                                     description = stringResource(R.string.mnn_tuning_level_hint),
-                                    fastLabel = stringResource(R.string.mnn_tuning_fast),
-                                    defaultLabel = stringResource(R.string.mnn_tuning_default),
-                                    deepLabel = stringResource(R.string.mnn_tuning_deep),
+                                    options = listOf(
+                                        NativeCore.TUNING_FAST to
+                                            stringResource(R.string.mnn_tuning_fast),
+                                        NativeCore.TUNING_DEFAULT to
+                                            stringResource(R.string.mnn_tuning_default),
+                                        NativeCore.TUNING_DEEP to
+                                            stringResource(R.string.mnn_tuning_deep),
+                                    ),
                                     selected = mnnTuningLevel,
                                     onSelect = {
                                         mnnTuningLevel = it
                                         preferences.edit {
                                             putString(NativeCore.PREF_TUNING_LEVEL, it)
+                                        }
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                SegmentedSettingRow(
+                                    title = stringResource(R.string.mnn_precision_level),
+                                    description = stringResource(R.string.mnn_precision_level_hint),
+                                    options = listOf(
+                                        NativeCore.PRECISION_FP16 to
+                                            stringResource(R.string.mnn_precision_fp16),
+                                        NativeCore.PRECISION_FP32 to
+                                            stringResource(R.string.mnn_precision_fp32),
+                                    ),
+                                    selected = mnnPrecision,
+                                    onSelect = {
+                                        mnnPrecision = it
+                                        preferences.edit {
+                                            putString(NativeCore.PREF_PRECISION, it)
                                         }
                                     },
                                 )
@@ -3872,17 +3910,16 @@ private fun SwitchSettingRow(
 }
 
 /**
- * Option-style setting row: a segmented control (three choices, not a switch).
- * Used for the kernel-enumeration effort, which has no sensible "off".
+ * Option-style setting row: a segmented control for a small set of choices
+ * (used instead of a switch where there is no sensible "off" state).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TuningLevelSettingRow(
+private fun SegmentedSettingRow(
     title: String,
     description: String,
-    fastLabel: String,
-    defaultLabel: String,
-    deepLabel: String,
+    // value to label, in display order
+    options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
 ) {
@@ -3907,32 +3944,27 @@ private fun TuningLevelSettingRow(
                 ButtonGroupDefaults.ConnectedSpaceBetween,
             ),
         ) {
-            ToggleButton(
-                checked = selected == NativeCore.TUNING_FAST,
-                onCheckedChange = { if (it) onSelect(NativeCore.TUNING_FAST) },
-                shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(fastLabel)
-            }
-            ToggleButton(
-                checked = selected == NativeCore.TUNING_DEFAULT,
-                onCheckedChange = { if (it) onSelect(NativeCore.TUNING_DEFAULT) },
-                shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(defaultLabel)
-            }
-            ToggleButton(
-                checked = selected == NativeCore.TUNING_DEEP,
-                onCheckedChange = { if (it) onSelect(NativeCore.TUNING_DEEP) },
-                shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(deepLabel)
+            options.forEachIndexed { index, option ->
+                ToggleButton(
+                    checked = selected == option.first,
+                    onCheckedChange = { checked -> if (checked) onSelect(option.first) },
+                    shapes = segmentedButtonShapes(index, options.size),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(option.second)
+                }
             }
         }
     }
+}
+
+/** Connected rounding for the first / middle / last button of a group. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun segmentedButtonShapes(index: Int, count: Int) = when {
+    index == 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+    index == count - 1 -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)

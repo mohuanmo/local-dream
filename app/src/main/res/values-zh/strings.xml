@@ -217,6 +217,10 @@
     <string name="mnn_tuning_fast">极速</string>
     <string name="mnn_tuning_default">默认</string>
     <string name="mnn_tuning_deep">慢</string>
+    <string name="mnn_precision_level">计算精度</string>
+    <string name="mnn_precision_level_hint">16 位（fp16）：更快、更省显存，可能有轻微数值误差（默认）；32 位（fp32）：更精确、更慢。仅对 GPU 生效——CPU 的 fp16 曾导致画面全白/全黑，已固定为 32 位。切换后需重启后端。</string>
+    <string name="mnn_precision_fp16">16 位（快）</string>
+    <string name="mnn_precision_fp32">32 位（准）</string>
 
     <!-- Parameter Share -->
     <string name="share">分享</string>

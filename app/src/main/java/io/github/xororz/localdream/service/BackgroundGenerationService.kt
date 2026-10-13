@@ -335,6 +335,8 @@ class BackgroundGenerationService : Service() {
                 // How hard the OpenCL backend may enumerate kernels for the best
                 // shape-specific configuration.
                 put("tuning_level", NativeCore.tuningLevel(applicationContext))
+                // GPU compute precision ("fp16" | "fp32").
+                put("precision", NativeCore.precision(applicationContext))
                 put("scheduler", scheduler)
                 // Ultrafix never streams previews: each one would tile-decode
                 // the full image (the backend rejects it as well).

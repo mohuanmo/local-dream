@@ -61,6 +61,9 @@ struct GenerationRequest {
   // Kernel-enumeration effort for the OpenCL backend: "fast" | "default" |
   // "deep" (see mnnTuningFromLevel).
   std::string tuning_level = "default";
+  // GPU compute precision: "fp16" (default) | "fp32" (see
+  // mnnPrecisionFromLevel). Ignored by the CPU path.
+  std::string precision = "fp16";
   bool show_diffusion_process = false;
   int show_diffusion_stride = 1;
   int width = 512;

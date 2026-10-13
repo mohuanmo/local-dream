@@ -56,6 +56,27 @@ object NativeCore {
             else -> TUNING_DEFAULT
         }
 
+    /**
+     * SharedPreferences key holding the GPU compute precision: "fp16" (default,
+     * half arithmetic) or "fp32" (full precision). The CPU path always runs
+     * fp32: Precision_Low there enables arm82 fp16, which corrupted the CLIP
+     * conditioning (solid white/black frames) on at least one device.
+     */
+    const val PREF_PRECISION = "gpu_precision"
+
+    const val PRECISION_FP16 = "fp16"
+    const val PRECISION_FP32 = "fp32"
+
+    /** The configured GPU precision, defaulting to the fp16 we always shipped. */
+    fun precision(context: Context): String =
+        when (
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(PREF_PRECISION, PRECISION_FP16)
+        ) {
+            PRECISION_FP32 -> PRECISION_FP32
+            else -> PRECISION_FP16
+        }
+
     private const val PREFS = "app_prefs"
     private const val IMAGE_NAME = "libstable_diffusion_core_image.so"
     private const val BUFFER_NAME = "libstable_diffusion_core_buffer.so"

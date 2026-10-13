@@ -253,6 +253,9 @@ class PipelineSd15Cpu : public Pipeline {
     // Enumeration effort, from the Settings choice (only the OpenCL backend
     // enumerates; Vulkan and CPU ignore it).
     opts.gpu_tuning = mnnTuningFromLevel(req.tuning_level);
+    // fp16/fp32, from the Settings choice (GPU paths only; see the CPU comment
+    // in MnnUtils.hpp).
+    opts.gpu_precision = mnnPrecisionFromLevel(req.precision);
     if (req.use_opencl) {
       auto cache_dir = ensureCacheDir(model_dir_);
       // The memory-mode tag keeps the IMAGE and BUFFER builds from sharing a

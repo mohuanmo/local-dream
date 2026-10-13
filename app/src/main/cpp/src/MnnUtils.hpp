@@ -119,6 +119,20 @@ inline int mnnTuningFromLevel(const std::string &level) {
   return MNN_GPU_TUNING_WIDE;
 }
 
+// Compute precision for the GPU backends, from the Settings choice:
+//   fp16 -> MNN::BackendConfig::Precision_Low     half arithmetic (default,
+//            what we have always shipped; faster and lighter on memory)
+//   fp32 -> MNN::BackendConfig::Precision_Normal  full precision (MNN's own
+//            default, slower)
+// MNN also has Precision_High and Precision_Low_BF16; they are not exposed here.
+// The CPU branch deliberately ignores this: Precision_Low there enables arm82
+// fp16, which turned the CLIP conditioning (and therefore the whole image) into
+// solid white/black on at least one device.
+inline int mnnPrecisionFromLevel(const std::string &level) {
+  if (level == "fp32") return MNN::BackendConfig::Precision_Normal;
+  return MNN::BackendConfig::Precision_Low;
+}
+
 // Session creation options shared by every MNN model in the pipeline.
 // CPU: 4 threads, low-memory, high-power, default precision.
 // OpenCL: wide tuning + low precision, plus an on-disk tuning cache when
@@ -150,6 +164,9 @@ struct MnnSessionOptions {
   // own tuning cache and no kernel-enumeration pass, so gpu_tuning and the
   // memory-mode bits below do not apply to it.
   bool use_vulkan = false;
+  // GPU compute precision: MNN::BackendConfig::Precision_Low (fp16, default) or
+  // Precision_Normal (fp32), from the Settings choice.
+  int gpu_precision = MNN::BackendConfig::Precision_Low;
 };
 
 // bionic declares mallopt() only for API 26+, while M_PURGE is defined at every
@@ -189,7 +206,8 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
     if (!opts.cache_file.empty())
       interpreter->setCacheFile(opts.cache_file.c_str());
     config.type = MNN_FORWARD_VULKAN;
-    backendConfig.precision = MNN::BackendConfig::Precision_Low;
+    backendConfig.precision =
+        static_cast<MNN::BackendConfig::PrecisionMode>(opts.gpu_precision);
   } else if (opts.use_opencl) {
     if (!opts.cache_file.empty()) {
       interpreter->setCacheFile(opts.cache_file.c_str());
@@ -206,7 +224,8 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
 #else
     config.mode = MNN_GPU_MEMORY_BUFFER | opts.gpu_tuning;
 #endif
-    backendConfig.precision = MNN::BackendConfig::Precision_Low;
+    backendConfig.precision =
+        static_cast<MNN::BackendConfig::PrecisionMode>(opts.gpu_precision);
   } else {
     config.type = MNN_FORWARD_CPU;
     config.numThread = opts.num_threads;

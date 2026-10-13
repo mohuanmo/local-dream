@@ -40,6 +40,9 @@ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
   // OpenCL kernel-enumeration effort (Settings). Unknown values fall back to
   // MNN's default inside mnnTuningFromLevel.
   req.tuning_level = json.value("tuning_level", "default");
+  // GPU compute precision (Settings). Anything that is not "fp32" keeps the
+  // fp16 default we have always shipped.
+  req.precision = json.value("precision", "fp16");
   req.show_diffusion_process = json.value("show_diffusion_process", false);
   req.show_diffusion_stride = json.value("show_diffusion_stride", 1);
   req.seed = json.value(

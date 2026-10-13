@@ -226,6 +226,10 @@
     <string name="mnn_tuning_fast">Fast</string>
     <string name="mnn_tuning_default">Default</string>
     <string name="mnn_tuning_deep">Slow</string>
+    <string name="mnn_precision_level">Compute precision</string>
+    <string name="mnn_precision_level_hint">16-bit (fp16): faster and lighter on memory, with slight numerical error (default). 32-bit (fp32): more accurate, slower. GPU only — the CPU path stays fp32 because fp16 there produced solid white/black frames. Restart the backend after switching.</string>
+    <string name="mnn_precision_fp16">16-bit (fast)</string>
+    <string name="mnn_precision_fp32">32-bit (accurate)</string>
 
     <!-- Parameter Share -->
     <string name="share">Share</string>

@@ -134,7 +134,8 @@ class PipelineSdxlMnn : public PipelineSdxl {
     MNN::ScheduleConfig config;
     MNN::BackendConfig backend;
     backend.memory = MNN::BackendConfig::Memory_Low;
-    backend.precision = MNN::BackendConfig::Precision_Low;
+    backend.precision = static_cast<MNN::BackendConfig::PrecisionMode>(
+        mnnPrecisionFromLevel(req.precision));
     backend.power = MNN::BackendConfig::Power_High;
     config.backendConfig = &backend;
     config.type = stage == 0 && req.use_opencl ? MNN_FORWARD_OPENCL : MNN_FORWARD_CPU;
