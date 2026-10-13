@@ -86,6 +86,12 @@ set(MNN_SUPPORT_TRANSFORMER_FUSE ON CACHE BOOL "" FORCE)
 # Vulkan sources are chosen at compile time by MNN_VULKAN_IMAGE -- MNN's own
 # default, and unlike the OpenCL memory mode it cannot differ per executable
 # because both of ours link the same MNN.
+#
+# The pinned MNN revision (see the 3rdparty/MNN gitlink) already carries the
+# Vulkan fixes a usable backend needs: #4940 (multi-image softmax through the
+# buffer path) and #4946 (descriptor pools shared per layout, fixing large-graph
+# crashes -- an SD UNet is exactly that). Older pins crash or produce garbage
+# there.
 set(MNN_VULKAN ON CACHE BOOL "" FORCE)
 set(MNN_VULKAN_IMAGE ON CACHE BOOL "" FORCE)
 add_subdirectory(3rdparty/MNN)
