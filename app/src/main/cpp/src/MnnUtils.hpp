@@ -10,12 +10,21 @@
 #include <MNN/Interpreter.hpp>
 #include <filesystem>
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 
 #if defined(__ANDROID__) || defined(__linux__)
 #include <malloc.h>
 #endif
+
+// Declared in MNN's private core/Backend.hpp and exported (MNN_PUBLIC). Only the
+// declaration is repeated here so this header does not have to pull in MNN's
+// private include tree; it is how we ask whether a backend was really linked in.
+namespace MNN {
+class RuntimeCreator;
+MNN_PUBLIC const RuntimeCreator *MNNGetExtraRuntimeCreator(MNNForwardType type);
+} // namespace MNN
 
 // Returns "{model_dir}/cache", creating it if needed. Returns "" when
 // model_dir is empty or directory creation fails; callers must treat that
@@ -133,6 +142,17 @@ inline int mnnPrecisionFromLevel(const std::string &level) {
   return MNN::BackendConfig::Precision_Low;
 }
 
+// Whether MNN's Vulkan backend is really available. Its registrar uses
+// needCheck=true, so the lookup constructs (and immediately destroys) a Vulkan
+// runtime -- far too expensive to repeat per session, hence the cached result.
+// This is also the only honest way to ask: MNN itself falls back to the CPU
+// without complaint when a requested forward type is missing.
+inline bool mnnVulkanAvailable() {
+  static const bool available =
+      MNN::MNNGetExtraRuntimeCreator(MNN_FORWARD_VULKAN) != nullptr;
+  return available;
+}
+
 // Session creation options shared by every MNN model in the pipeline.
 // CPU: 4 threads, low-memory, high-power, default precision.
 // OpenCL: wide tuning + low precision, plus an on-disk tuning cache when
@@ -199,6 +219,17 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
   MNN::BackendConfig backendConfig;
   bool tuning = false;
   if (opts.use_opencl && opts.use_vulkan) {
+    // Refuse to continue when the Vulkan backend is not actually there. MNN
+    // falls back to the CPU silently when a requested type is missing, which is
+    // how a Vulkan run once ended up executing the whole UNet on the CPU with
+    // fp16 enabled and got the process OOM-killed -- indistinguishable from a
+    // GPU bug. (Only Vulkan is checked: the CPU fallback for a missing OpenCL is
+    // upstream's long-standing behaviour and still produces an image.)
+    if (!mnnVulkanAvailable()) {
+      throw std::runtime_error(
+          "Vulkan backend is unavailable in this build (see the GPU backend "
+          "setting); no session was created");
+    }
     // Vulkan: it keeps its own tuning cache (MNN's VKCache, verified by MNN on
     // load), but unlike OpenCL it has no per-kernel enumeration pass -- so
     // `tuning` stays false and the UI shows no enumeration indicator, which is

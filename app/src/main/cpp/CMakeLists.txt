@@ -184,10 +184,19 @@ foreach(mem_mode IN ITEMS image buffer)
     endif()
 
     # link
+    #
+    # MNN is whole-archived on purpose. Its Vulkan backend registers itself from
+    # a file-static initializer in source/backend/vulkan/runtime/VulkanRuntime.cpp
+    # and nothing references that translation unit, so a plain static-archive
+    # link drops it: MNN then prints "Can't Find type=7 backend, use 0 instead"
+    # and silently runs the whole pipeline on the CPU instead. OpenCL needs no
+    # such trick because registerBackend() calls it explicitly.
     target_link_libraries(${TARGET_NAME}
         PRIVATE
         ${PLATFORM_LIBS}
+        "-Wl,--whole-archive"
         MNN
+        "-Wl,--no-whole-archive"
         tokenizers_cpp
         libzstd
     )
