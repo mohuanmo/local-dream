@@ -94,14 +94,34 @@ set(MNN_SUPPORT_TRANSFORMER_FUSE ON CACHE BOOL "" FORCE)
 # there.
 set(MNN_VULKAN ON CACHE BOOL "" FORCE)
 set(MNN_VULKAN_IMAGE ON CACHE BOOL "" FORCE)
-# Huawei's NPU, wired up exactly as MNN's own wiki describes: the DDK headers
-# and libraries are staged into source/backend/hiai/3rdParty/{arm64-v8a,include}
-# by the release workflow, and the backend registers itself as an extra runtime.
-# Select it with MNN_FORWARD_USER_0. MNN's hiai backend never mentions
-# MNN_FORWARD_VULKAN-style enum entries of its own, and unlike OpenCL it is not
-# called from registerBackend() either, so it relies on the --whole-archive
-# below to have its registration initializer run.
-set(MNN_NPU ON CACHE BOOL "" FORCE)
+# Huawei's NPU, wired up as MNN's wiki describes: the DDK headers and libraries
+# are staged into source/backend/hiai/3rdParty/{arm64-v8a,include} by the
+# release workflow, and the backend registers itself under MNN_FORWARD_USER_0.
+#
+# Only enabled when the DDK is actually staged, so a build without it still
+# works and simply has no Kirin path.
+set(HIAI_DDK_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/MNN/source/backend/hiai/3rdParty"
+    CACHE PATH "HiAI / CANN Kit DDK staged for MNN's NPU backend")
+set(HIAI_LIBS "")
+if(EXISTS "${HIAI_DDK_ROOT}/arm64-v8a/libhiai.so" AND
+   EXISTS "${HIAI_DDK_ROOT}/include/hiai_ir_build.h")
+    set(MNN_NPU ON CACHE BOOL "" FORCE)
+    # MNN_BUILD_SHARED_LIBS=OFF forces MNN_SEP_BUILD=OFF, and that is the one
+    # branch of its hiai CMakeLists that does not link Huawei's libraries.
+    # MNN's dynamic trampolines cover the HiAI calls except two: hiai::AiContext's
+    # constructor and destructor, which a C++ ctor cannot route through a
+    # trampoline. Those two have to resolve against the real library, which makes
+    # libhiai.so a hard DT_NEEDED of the core -- so the whole set ships in the
+    # APK. Without them the core would fail to load at all, on any device.
+    foreach(lib hiai_ir_build hiai_ir hiai)
+        list(APPEND HIAI_LIBS "${HIAI_DDK_ROOT}/arm64-v8a/lib${lib}.so")
+    endforeach()
+    message(STATUS "HiAI backend enabled, linking ${HIAI_LIBS}")
+else()
+    set(MNN_NPU OFF CACHE BOOL "" FORCE)
+    message(STATUS "HiAI DDK not staged: building without the Kirin path")
+endif()
 add_subdirectory(3rdparty/MNN)
 
 set(XTENSOR_USE_XSIMD ON)
@@ -211,6 +231,9 @@ foreach(mem_mode IN ITEMS image buffer)
         "-Wl,--whole-archive"
         MNN
         "-Wl,--no-whole-archive"
+        # After MNN, so the two HiAI symbols MNN still references directly can
+        # resolve against them. Empty when the DDK is not staged.
+        ${HIAI_LIBS}
         tokenizers_cpp
         libzstd
     )
