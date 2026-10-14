@@ -51,6 +51,7 @@ jobs:
       # Caffe/TF adapters) and has no libhiai_ir*/graph headers at all, which is
       # what MNN's backend needs.
       HIAI_DDK_MIRRORS: |
+        https://github.com/mohuanmo/local-dream/releases/download/hiai-ddk-330/hiai_ddk_lib_330.tar.gz
         https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_330.tar.gz
         https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_510.tar.gz
         http://cnbj1.fds.api.xiaomi.com/aibench/third_party/HiAI_DDK_100.200.010.011.zip
