@@ -1517,6 +1517,14 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         ),
                                     )
                                 }
+                                var hiaiBackend by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(
+                                            NativeCore.PREF_HIAI_BACKEND,
+                                            false,
+                                        ),
+                                    )
+                                }
                                 var enableTagAutocomplete by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_tag_autocomplete", true)
@@ -1982,6 +1990,28 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )
+                                // Only on a Kirin device: the backend can only load
+                                // Huawei's runtime libraries there, and it loads
+                                // them solely for requests that ask for this. Off by
+                                // default, because whether Huawei will serve an app
+                                // it has not registered is not something we can
+                                // determine from here.
+                                if (Model.isKirinDevice()) {
+                                    SwitchSettingRow(
+                                        title = stringResource(R.string.npu_hiai_backend),
+                                        description = stringResource(R.string.npu_hiai_backend_hint),
+                                        checked = hiaiBackend,
+                                        onCheckedChange = {
+                                            hiaiBackend = it
+                                            preferences.edit {
+                                                putBoolean(NativeCore.PREF_HIAI_BACKEND, it)
+                                            }
+                                        },
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                    )
+                                }
                                 // Read the context in the composable scope: doing
                                 // it inside onClick would be a composable call
                                 // from a non-composable lambda.

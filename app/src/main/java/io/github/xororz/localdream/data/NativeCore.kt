@@ -73,6 +73,24 @@ object NativeCore {
             .getBoolean(PREF_KEEP_BACKEND_ALIVE, true)
 
     /**
+     * SharedPreferences key: run MNN models on Huawei's NPU (MNN's hiai backend,
+     * MNN_FORWARD_USER_0). Off by default, and only offered on a Kirin device.
+     *
+     * The backend loads Huawei's runtime libraries on demand -- nothing is loaded
+     * unless a request sets this -- but whether those libraries will serve an app
+     * Huawei has not registered is not something we can determine from here, so
+     * the call is the user's.
+     */
+    const val PREF_HIAI_BACKEND = "npu_backend_hiai"
+
+    const val NPU_BACKEND_HIAI = "hiai"
+
+    /** Whether to run on Huawei's NPU. */
+    fun prefersHiai(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(PREF_HIAI_BACKEND, false)
+
+    /**
      * SharedPreferences key holding the GPU compute precision: "fp16" (default,
      * half arithmetic) or "fp32" (full precision). The CPU path always runs
      * fp32: Precision_Low there enables arm82 fp16, which corrupted the CLIP

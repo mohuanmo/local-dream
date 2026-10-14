@@ -380,6 +380,19 @@ class BackgroundGenerationService : Service() {
                         NativeCore.GPU_BACKEND_OPENCL
                     },
                 )
+                // Huawei's NPU, selected the same way the GPU API is. Sent only on
+                // a Kirin device: the backend can only load Huawei's runtime
+                // libraries there, and nothing loads them unless this is set.
+                put(
+                    "npu_backend",
+                    if (NativeCore.prefersHiai(applicationContext) &&
+                        Model.isKirinDevice()
+                    ) {
+                        NativeCore.NPU_BACKEND_HIAI
+                    } else {
+                        ""
+                    },
+                )
                 // How hard the OpenCL backend may enumerate kernels for the best
                 // shape-specific configuration.
                 put("tuning_level", NativeCore.tuningLevel(applicationContext))

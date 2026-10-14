@@ -264,6 +264,7 @@ class PipelineSd15Cpu : public Pipeline {
     MnnSessionOptions opts;
     opts.use_opencl = req.use_opencl;
     opts.use_vulkan = req.use_vulkan;
+    opts.use_hiai = req.use_hiai;
     opts.stage = stage;
     opts.width = req.width;
     // Enumeration effort, from the Settings choice (only the OpenCL backend

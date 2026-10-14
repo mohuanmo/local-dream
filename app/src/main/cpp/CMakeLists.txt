@@ -110,12 +110,17 @@ set(HIAI_LIBS "")
 if(EXISTS "${HIAI_DDK_ROOT}/arm64-v8a/libhiai.so" AND
    EXISTS "${HIAI_DDK_ROOT}/include/hiai_ir_build.h")
     set(MNN_NPU ON CACHE BOOL "" FORCE)
-    foreach(lib hiai_ir_build hiai_ir hiai)
-        list(APPEND HIAI_LIBS "${HIAI_DDK_ROOT}/arm64-v8a/lib${lib}.so")
-    endforeach()
-    message(STATUS "HiAI backend enabled, linking ${HIAI_LIBS}")
+    # The two symbols MNN's hiai backend still references directly are resolved
+    # by src/HiaiSupport.cpp instead of by linking Huawei's libraries, so the
+    # libraries are only ever loaded when a request selects the Kirin backend.
+    # Linking them made them hard DT_NEEDEDs, and their initialisers abort the
+    # process on load -- which took every device down with it.
+    set(HIAI_SUPPORT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/HiaiSupport.cpp")
+    list(APPEND PACKAGE_INCLUDES "${HIAI_DDK_ROOT}/include")
+    message(STATUS "HiAI backend enabled (libraries loaded on demand)")
 else()
     set(MNN_NPU OFF CACHE BOOL "" FORCE)
+    set(HIAI_SUPPORT_SRC "")
     message(STATUS "HiAI DDK not staged: building without the Kirin path")
 endif()
 add_subdirectory(3rdparty/MNN)
@@ -178,6 +183,12 @@ file(GLOB SOURCES
     "${SRC_DIR_UTILS}/*.cpp"
     "${SRC_DIR_WRAPPER_UTILS}/*.cpp"
 )
+# Appended after the glob, which replaces the variable: the file providing the
+# two HiAI symbols MNN references directly, so Huawei's libraries stay a runtime
+# dependency rather than a DT_NEEDED of every install.
+if(NOT HIAI_SUPPORT_SRC STREQUAL "")
+    list(APPEND SOURCES ${HIAI_SUPPORT_SRC})
+endif()
 
 if(QNN_DEBUG_ENABLE)
     add_compile_options(-O0 -g)
@@ -207,6 +218,10 @@ foreach(mem_mode IN ITEMS image buffer)
         PRIVATE
         XTENSOR_USE_XSIMD
     )
+    if(NOT HIAI_SUPPORT_SRC STREQUAL "")
+        # Enables the on-demand registration path in MnnUtils.hpp.
+        target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_HIAI_ENABLED=1)
+    endif()
     if(mem_mode STREQUAL "image")
         target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_GPU_MEMORY_IMAGE=1)
     else()
@@ -227,9 +242,6 @@ foreach(mem_mode IN ITEMS image buffer)
         "-Wl,--whole-archive"
         MNN
         "-Wl,--no-whole-archive"
-        # After MNN, so the two HiAI symbols MNN still references directly can
-        # resolve against them. Empty when the DDK is not staged.
-        ${HIAI_LIBS}
         tokenizers_cpp
         libzstd
     )

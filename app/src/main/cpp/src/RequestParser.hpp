@@ -37,6 +37,8 @@ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
   // GPU API selection (only meaningful together with use_opencl). Anything that
   // is not "vulkan" keeps the OpenCL path.
   req.use_vulkan = json.value("gpu_backend", "opencl") == "vulkan";
+  // Huawei's NPU, selected the same way the GPU API is: "npu_backend":"hiai".
+  req.use_hiai = json.value("npu_backend", "") == "hiai";
   // OpenCL kernel-enumeration effort (Settings). Unknown values fall back to
   // MNN's default inside mnnTuningFromLevel.
   req.tuning_level = json.value("tuning_level", "default");

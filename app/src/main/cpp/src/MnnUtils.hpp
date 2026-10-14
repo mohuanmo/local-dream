@@ -232,6 +232,26 @@ inline void mnnRequireMemoryForVulkan(const std::string &model_path) {
   throw std::runtime_error(message);
 }
 
+// Huawei's NPU, loaded on demand. MNN registers it from a named function that
+// only its plugin calls in a static build (registerBackend() has no HiAI branch,
+// unlike OpenCL), so we call it -- the first time a request actually selects the
+// Kirin backend, never at startup.
+#ifdef SDCORE_HIAI_ENABLED
+// Declared identically by MNN's HiAIBackendPlugin.cpp.
+namespace MNN {
+bool registerHiAIRuntimeCreator();
+}
+#endif
+
+inline bool mnnRegisterHiai() {
+#ifdef SDCORE_HIAI_ENABLED
+  static const bool registered = MNN::registerHiAIRuntimeCreator();
+  return registered;
+#else
+  return false;
+#endif
+}
+
 // Whether MNN's Vulkan backend is really available. Its registrar uses
 // needCheck=true, so the lookup constructs (and immediately destroys) a Vulkan
 // runtime -- far too expensive to repeat per session, hence the cached result.
@@ -274,6 +294,9 @@ struct MnnSessionOptions {
   // own tuning cache and no kernel-enumeration pass, so gpu_tuning and the
   // memory-mode bits below do not apply to it.
   bool use_vulkan = false;
+  // Run on Huawei's NPU through MNN's hiai backend (MNN_FORWARD_USER_0). Loads
+  // Huawei's runtime libraries on demand; the OpenCL/Vulkan bits do not apply.
+  bool use_hiai = false;
   // GPU compute precision: MNN::BackendConfig::Precision_Low (fp16, default) or
   // Precision_Normal (fp32), from the Settings choice.
   int gpu_precision = MNN::BackendConfig::Precision_Low;
@@ -308,7 +331,18 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
   MNN::ScheduleConfig config;
   MNN::BackendConfig backendConfig;
   bool tuning = false;
-  if (opts.use_opencl && opts.use_vulkan) {
+  if (opts.use_hiai) {
+    // Huawei's NPU. Everything it needs -- the runtime libraries it dlopens --
+    // is loaded from here on, so nothing touches them unless this is selected.
+    if (!mnnRegisterHiai()) {
+      throw std::runtime_error(
+          "Huawei's NPU backend is unavailable in this build; no session was "
+          "created");
+    }
+    // MNN's hiai backend never got an enum of its own: it registers as an extra
+    // runtime under USER_0 (NPUBackendCreator does the MNNInsertExtraRuntimeCreator).
+    config.type = MNN_FORWARD_USER_0;
+  } else if (opts.use_opencl && opts.use_vulkan) {
     // Refuse to continue when the Vulkan backend is not actually there. MNN
     // falls back to the CPU silently when a requested type is missing, which is
     // how a Vulkan run once ended up executing the whole UNet on the CPU with

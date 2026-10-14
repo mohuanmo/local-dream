@@ -240,6 +240,8 @@
     <string name="npu_badge_kirin">NPU · Kirin</string>
     <string name="needs_qualcomm_npu">This model needs a Qualcomm NPU (Hexagon), and this device is not a Qualcomm platform, so it cannot run here.</string>
     <string name="needs_kirin_npu">This model needs a Huawei Kirin NPU (HiAI/CANN), and this device is not a Kirin platform, so it cannot run here.</string>
+    <string name="npu_hiai_backend">Use Huawei\'s NPU (experimental)</string>
+    <string name="npu_hiai_backend_hint">⚠️ Experimental, off by default: runs .mnn models on the Kirin NPU (Da Vinci). Huawei\'s libraries are loaded only while this is on and a generation is actually running — with it off, not a byte of them is touched. Whether it works depends on your device and on Huawei serving an app it has not registered; if the backend crashes, come back and switch it off. Applies to CPU models (.mnn) only.</string>
 
     <!-- Parameter Share -->
     <string name="share">Share</string>

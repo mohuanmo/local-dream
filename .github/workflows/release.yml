@@ -41,16 +41,11 @@ jobs:
       NDK_VERSION: "28.0.13004108"
       # Must match the QNN SDK revision CMakeLists.txt is written against.
       QNN_VERSION: "2.50.0.260828"
-      # NOTE: the HiAI / CANN Kit DDK is deliberately *not* fetched here. Linking
-      # it made libhiai* a hard DT_NEEDED of the core, so every device loaded
-      # Huawei's runtime at startup -- and its initializers abort the process
-      # ("libc++abi: terminating", SIGABRT) instead of failing gracefully. The
-      # recipe, for whenever this is revisited: download CANN Kit from
+      # HiAI / CANN Kit DDK for MNN's hiai backend. Signed URL: refresh it from
       # https://developer.huawei.com/consumer/cn/doc/hiai-Library/ddk-download-0000001053590180
-      # (sign-in required; the CDN 403s without browser-ish headers), stage
-      # ddk/ai_ddk_lib/{lib64,include} into the layout MNN's
-      # source/backend/hiai/CMakeLists.txt expects, and link it only in a build
-      # where a missing or refusing library cannot take the whole app down.
+      # (sign-in required) when it expires.
+      CANN_KIT_VERSION: "6.0.1.0"
+      CANN_KIT_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/72/v3/TBwJDEdBQLCcNiK1n-7z3g/CANN-Kit-6.0.1.0.zip?HW-CC-KV=V1&HW-CC-Date=20251222T032900Z&HW-CC-Expire=315360000&HW-CC-Sign=C7B3FE4EDCAEBD39D227B7FD2C0F244F489640CA06DC47F1F6B8C74D85384AC6"
       # tokenizers-cpp's Rust crate trips `dangerous_implicit_autorefs`, which
       # newer rustc denies by default. Pin the toolchain the project's shipped
       # libraries were actually built with (rustc path baked into the .so).
@@ -180,6 +175,44 @@ jobs:
       #
       # The backend is compiled in so the app can offer a Kirin path next to the
       # Qualcomm one; it is only used when a request selects it.
+      # Huawei's HiAI / CANN Kit DDK, needed to compile MNN's hiai backend. The
+      # libraries are compiled against but never linked: src/HiaiSupport.cpp
+      # provides the two symbols MNN still references directly (hiai::AiContext's
+      # constructor and destructor, which its dynamic trampolines cannot cover),
+      # so nothing loads Huawei's runtime unless a request selects the Kirin
+      # backend. Linking them made them hard DT_NEEDEDs, and their initialisers
+      # abort the process on load rather than failing gracefully.
+      #
+      # The runtime copies go to assets/hiailibs, which the app stages into the
+      # backend's runtime directory -- the one on LD_LIBRARY_PATH -- at startup.
+      #
+      # The URL is signed: refresh it from
+      # https://developer.huawei.com/consumer/cn/doc/hiai-Library/ddk-download-0000001053590180
+      # (sign-in required) and keep CANN_KIT_VERSION in step.
+      - name: Download CANN Kit DDK (HiAI)
+        if: env.REBUILD_NATIVE == 'true'
+        run: |
+          echo "Downloading CANN Kit ${CANN_KIT_VERSION} DDK"
+          # The CDN answers 403 without browser-ish headers.
+          curl -fL --retry 3 --retry-delay 5 \
+            -A "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36" \
+            -e "https://developer.huawei.com/" \
+            "$CANN_KIT_URL" -o "$RUNNER_TEMP/cann.zip"
+          unzip -q "$RUNNER_TEMP/cann.zip" -d "$RUNNER_TEMP/cann"
+          rm -f "$RUNNER_TEMP/cann.zip"
+          ddk="$RUNNER_TEMP/cann/ddk/ai_ddk_lib"
+          # Fail loudly rather than building a backend against half a DDK.
+          test -d "$ddk/include/graph" || { echo "::error::HiAI graph headers missing"; exit 1; }
+          test -f "$ddk/lib64/libhiai.so" || { echo "::error::HiAI libs missing"; exit 1; }
+          hiai="app/src/main/cpp/3rdparty/MNN/source/backend/hiai/3rdParty"
+          mkdir -p "$hiai/arm64-v8a" "$hiai/include"
+          cp "$ddk"/lib64/*.so "$hiai/arm64-v8a/"
+          cp -r "$ddk"/include/. "$hiai/include/"
+          mkdir -p app/src/main/assets/hiailibs
+          cp "$ddk"/lib64/*.so app/src/main/assets/hiailibs/
+          echo "Staged HiAI headers:"; ls "$hiai/include" | head -5
+          echo "Staged HiAI runtime libraries:"; ls app/src/main/assets/hiailibs
+
       - name: Build libstable_diffusion_core.so
         if: env.REBUILD_NATIVE == 'true'
         run: |

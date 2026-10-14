@@ -231,6 +231,8 @@
     <string name="npu_badge_kirin">NPU · 麒麟</string>
     <string name="needs_qualcomm_npu">此模型需要高通 NPU（Hexagon/骁龙），本机不是高通平台，跑不了这个模型。</string>
     <string name="needs_kirin_npu">此模型需要华为麒麟 NPU（HiAI/CANN），本机不是麒麟平台，跑不了这个模型。</string>
+    <string name="npu_hiai_backend">使用麒麟 NPU（实验性）</string>
+    <string name="npu_hiai_backend_hint">⚠️ 实验性，默认关闭：把 .mnn 模型放到麒麟 NPU（达芬奇架构）上跑。华为的库只在你开启后、且真正生成时才会加载——不开则一个字节都不加载。能否成功取决于你的机型与华为是否放行未登记的应用；若后端崩溃，回到这里关掉即可。仅对 CPU 版模型（.mnn）生效。</string>
 
     <!-- Parameter Share -->
     <string name="share">分享</string>

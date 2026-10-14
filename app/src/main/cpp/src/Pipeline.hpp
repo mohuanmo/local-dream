@@ -58,6 +58,9 @@ struct GenerationRequest {
   // Which GPU API to use when use_opencl ("run on the GPU") is set. Vulkan is
   // an opt-in experiment; everything not set to it stays on OpenCL.
   bool use_vulkan = false;
+  // Run on Huawei's NPU (MNN's hiai backend, MNN_FORWARD_USER_0) instead of the
+  // CPU or the GPU. Mutually exclusive with the two above.
+  bool use_hiai = false;
   // Kernel-enumeration effort for the OpenCL backend: "fast" | "default" |
   // "deep" (see mnnTuningFromLevel).
   std::string tuning_level = "default";
