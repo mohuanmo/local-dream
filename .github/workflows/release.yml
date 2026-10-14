@@ -45,6 +45,9 @@ jobs:
       # https://developer.huawei.com/consumer/cn/doc/hiai-Library/ddk-download-0000001053590180
       # (sign-in required) when it expires.
       CANN_KIT_VERSION: "6.0.1.0"
+      # What that package reports about itself, so a rotated URL/package shows up
+      # as a warning in the build log rather than as a mystery later.
+      CANN_KIT_DDK_REVISION: "HiAI_DDK_100.600.020.010"
       CANN_KIT_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/72/v3/TBwJDEdBQLCcNiK1n-7z3g/CANN-Kit-6.0.1.0.zip?HW-CC-KV=V1&HW-CC-Date=20251222T032900Z&HW-CC-Expire=315360000&HW-CC-Sign=C7B3FE4EDCAEBD39D227B7FD2C0F244F489640CA06DC47F1F6B8C74D85384AC6"
       # tokenizers-cpp's Rust crate trips `dangerous_implicit_autorefs`, which
       # newer rustc denies by default. Pin the toolchain the project's shipped
@@ -204,6 +207,16 @@ jobs:
           # Fail loudly rather than building a backend against half a DDK.
           test -d "$ddk/include/graph" || { echo "::error::HiAI graph headers missing"; exit 1; }
           test -f "$ddk/lib64/libhiai.so" || { echo "::error::HiAI libs missing"; exit 1; }
+          # The signed URL can be rotated, and Huawei numbers the package
+          # independently of the CANN Kit release ("HiAI_DDK_100.600.020.010"
+          # for 6.0.1.0). Report what arrived, and warn when it is not the
+          # revision the backend was written against, so a silent swap shows up
+          # here instead of as a mysterious build failure later.
+          package_version="$(sed -n 's/.*"VERSION":"\([^"]*\)".*/\1/p' "$RUNNER_TEMP/cann/ddk_info" | tr -d '\n')"
+          echo "CANN Kit ${CANN_KIT_VERSION} package reports: ${package_version:-unknown}"
+          if [ -n "${CANN_KIT_DDK_REVISION}" ] && [ "$package_version" != "$CANN_KIT_DDK_REVISION" ]; then
+            echo "::warning::DDK revision changed: expected ${CANN_KIT_DDK_REVISION}, got ${package_version:-unknown}"
+          fi
           hiai="app/src/main/cpp/3rdparty/MNN/source/backend/hiai/3rdParty"
           mkdir -p "$hiai/arm64-v8a" "$hiai/include"
           cp "$ddk"/lib64/*.so "$hiai/arm64-v8a/"
