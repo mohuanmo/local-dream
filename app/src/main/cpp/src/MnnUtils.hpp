@@ -17,11 +17,6 @@
 #include <string>
 #include <system_error>
 
-// Which operators landed on the requested backend, and which fell back to the
-// CPU (see BackendAudit.hpp). Compiles to nothing when the schema headers are
-// unavailable.
-#include "BackendAudit.hpp"
-
 #if defined(__ANDROID__) || defined(__linux__)
 #include <malloc.h>
 #endif
@@ -302,11 +297,6 @@ struct MnnSessionOptions {
   // Run on Huawei's NPU through MNN's hiai backend (MNN_FORWARD_USER_0). Loads
   // Huawei's runtime libraries on demand; the OpenCL/Vulkan bits do not apply.
   bool use_hiai = false;
-  // Path of the model this session is created from, only used to report which
-  // ops ended up on a backend other than the requested one (see BackendAudit).
-  std::string model_path;
-  // Human-readable stage name ("unet", "vae_dec", ...) for those reports.
-  const char *stage = "";
   // GPU compute precision: MNN::BackendConfig::Precision_Low (fp16, default) or
   // Precision_Normal (fp32), from the Settings choice.
   int gpu_precision = MNN::BackendConfig::Precision_Low;
@@ -410,9 +400,6 @@ inline MNN::Session *createMnnSession(MNN::Interpreter *interpreter,
   mnnLogMemory("session-create:begin", backend);
   MNN::Session *session = interpreter->createSession(config);
   mnnLogMemory("session-create:end", backend);
-  // MNN falls back to the CPU per op, silently, so a run that asked for the GPU
-  // can be mostly CPU work: say which ops did not get what was requested.
-  backend_audit::report(interpreter, session, opts.model_path, opts.stage, config.type);
   if (tuning && mnnTuningNotify())
     mnnTuningNotify()(opts.stage, opts.width, false);
   return session;

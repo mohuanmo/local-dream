@@ -41,29 +41,14 @@ jobs:
       NDK_VERSION: "28.0.13004108"
       # Must match the QNN SDK revision CMakeLists.txt is written against.
       QNN_VERSION: "2.50.0.260828"
-      # HiAI DDK, public mirrors (Huawei's own page needs a developer login).
-      # The device's HiAI runtime is 100.333.020.100 on a Kirin 810, so the DDK
-      # has to be of that generation or older. Paddle Lite's CDN ships several
-      # and its docs name these for "Kirin 810/990"; 330 is the one closest to
-      # this device, and 510 is newer than the device's runtime.
-      #
-      # The "_LITE" package of the same DDK is the mixmodel half (libhiai plus
-      # Caffe/TF adapters) and has no libhiai_ir*/graph headers at all, which is
-      # what MNN's backend needs.
-      # HiAI DDK. CANN Kit 6.0.1.0 ships HiAI_DDK_100.600.020.010 under
-      # ddk/ai_ddk_lib/{lib64,include} -- it compiles MNN's current hiai backend,
-      # which the 330-generation DDK does not (that one has no native_handle.h).
-      # Huawei's CDN answers 403 without browser-ish headers, and the link is
-      # signed: refresh it from
+      # HiAI / CANN Kit DDK for MNN's hiai backend. Signed URL: refresh it from
       # https://developer.huawei.com/consumer/cn/doc/hiai-Library/ddk-download-0000001053590180
       # (sign-in required) when it expires.
       CANN_KIT_VERSION: "6.0.1.0"
-      HIAI_DDK_MIRRORS: |
-        https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/72/v3/TBwJDEdBQLCcNiK1n-7z3g/CANN-Kit-6.0.1.0.zip?HW-CC-KV=V1&HW-CC-Date=20251222T032900Z&HW-CC-Expire=315360000&HW-CC-Sign=C7B3FE4EDCAEBD39D227B7FD2C0F244F489640CA06DC47F1F6B8C74D85384AC6
-        https://github.com/mohuanmo/local-dream/releases/download/hiai-ddk-330/hiai_ddk_lib_330.tar.gz
-      # Printed rather than enforced: the package's own numbering (100.600.020.010
-      # for CANN Kit 6.0.1.0) is what the build log should show.
-      HIAI_DDK_EXPECTED: ""
+      # What that package reports about itself, so a rotated URL/package shows up
+      # as a warning in the build log rather than as a mystery later.
+      CANN_KIT_DDK_REVISION: "HiAI_DDK_100.600.020.010"
+      CANN_KIT_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/72/v3/TBwJDEdBQLCcNiK1n-7z3g/CANN-Kit-6.0.1.0.zip?HW-CC-KV=V1&HW-CC-Date=20251222T032900Z&HW-CC-Expire=315360000&HW-CC-Sign=C7B3FE4EDCAEBD39D227B7FD2C0F244F489640CA06DC47F1F6B8C74D85384AC6"
       # tokenizers-cpp's Rust crate trips `dangerous_implicit_autorefs`, which
       # newer rustc denies by default. Pin the toolchain the project's shipped
       # libraries were actually built with (rustc path baked into the .so).
@@ -193,87 +178,53 @@ jobs:
       #
       # The backend is compiled in so the app can offer a Kirin path next to the
       # Qualcomm one; it is only used when a request selects it.
-      # Huawei's own DDK page needs a developer login, so the public mirrors go
-      # first. Xiaomi's MobileAIBench publishes the same package (with its sha256
-      # in the README); Paddle Lite's own CDN is the one its docs point at for
-      # "Kirin 810/990". Either way the layout differs between packages, so the
-      # pieces are located rather than assumed.
+      # Huawei's HiAI / CANN Kit DDK, needed to compile MNN's hiai backend. The
+      # libraries are compiled against but never linked: src/HiaiSupport.cpp
+      # provides the two symbols MNN still references directly (hiai::AiContext's
+      # constructor and destructor, which its dynamic trampolines cannot cover),
+      # so nothing loads Huawei's runtime unless a request selects the Kirin
+      # backend. Linking them made them hard DT_NEEDEDs, and their initialisers
+      # abort the process on load rather than failing gracefully.
       #
-      # Version matters more than which mirror works: the DDK's build-time API has
-      # to exist in the HiAI runtime on the device, and a runtime older than the
-      # DDK (seen as 100.333.020.100 on a Kirin 810 against a 100.600 DDK) makes
-      # MNN's hiai backend fault. The package reports its own version below.
-      - name: Download HiAI DDK
+      # The runtime copies go to assets/hiailibs, which the app stages into the
+      # backend's runtime directory -- the one on LD_LIBRARY_PATH -- at startup.
+      #
+      # The URL is signed: refresh it from
+      # https://developer.huawei.com/consumer/cn/doc/hiai-Library/ddk-download-0000001053590180
+      # (sign-in required) and keep CANN_KIT_VERSION in step.
+      - name: Download CANN Kit DDK (HiAI)
         if: env.REBUILD_NATIVE == 'true'
         run: |
-          set -e
-          pkg="$RUNNER_TEMP/ddk.pkg"
-          ok=""
-          for url in $HIAI_DDK_MIRRORS; do
-            echo "Trying $url"
-            # Huawei's CDN 403s without browser-ish headers; harmless elsewhere.
-            if curl -fL --retry 2 --retry-delay 3 \
-                 -A "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36" \
-                 -e "https://developer.huawei.com/" \
-                 --max-time 600 "$url" -o "$pkg"; then
-              echo "Downloaded $(du -h "$pkg" | cut -f1) from $url"
-              ok="yes"
-              break
-            fi
-            echo "::warning::download failed, trying the next mirror"
-          done
-          test -n "$ok" || { echo "::error::no HiAI DDK could be downloaded"; exit 1; }
-
-          dir="$RUNNER_TEMP/ddk"
-          mkdir -p "$dir"
-          case "$(file -b "$pkg")" in
-            *Zip*)  unzip -q "$pkg" -d "$dir" ;;
-            *gzip*) tar xzf "$pkg" -C "$dir" ;;
-            *)      echo "::error::unrecognised DDK archive"; exit 1 ;;
-          esac
-
-          # Print what actually arrived: the packages nest differently, and the
-          # "_LITE" variant of the same DDK is the mixmodel half with no
-          # ir/graph pieces at all.
-          echo "Package contains:"; find "$dir" -maxdepth 3 -mindepth 1 -type d | head -20
-
-          # Prefer the 64-bit set when a package ships both ABIs.
-          lib=$(find "$dir" -path '*lib64*' -name libhiai.so | head -1)
-          [ -n "$lib" ] || lib=$(find "$dir" -name libhiai.so | head -1)
-          test -n "$lib" || { echo "::error::libhiai.so not found in the package"; exit 1; }
-          inc=$(find "$dir" -type d -name graph | head -1)
-          test -n "$inc" || {
-            echo "::error::HiAI graph headers not found: this looks like the _LITE (mixmodel) package, which has no ir/graph half"
-            exit 1
-          }
-          for need in libhiai_ir.so libhiai_ir_build.so; do
-            find "$dir" -name "$need" | head -1 | grep -q . || {
-              echo "::error::$need not found: MNN's hiai backend needs the full DDK"
-              exit 1
-            }
-          done
-          libdir="$(dirname "$lib")"
-          incdir="$(dirname "$inc")"
-          echo "Libraries: $libdir"
-          echo "Headers:   $incdir"
-
-          version="$(find "$dir" -name ddk_info -exec sed -n 's/.*"VERSION":"\([^"]*\)".*/\1/p' {} \; | head -1)"
-          echo "DDK package reports: ${version:-unknown}"
-          if [ -n "$HIAI_DDK_EXPECTED" ] && [ "$version" != "$HIAI_DDK_EXPECTED" ]; then
-            echo "::warning::DDK revision is ${version:-unknown}, expected $HIAI_DDK_EXPECTED"
+          echo "Downloading CANN Kit ${CANN_KIT_VERSION} DDK"
+          # The CDN answers 403 without browser-ish headers.
+          curl -fL --retry 3 --retry-delay 5 \
+            -A "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36" \
+            -e "https://developer.huawei.com/" \
+            "$CANN_KIT_URL" -o "$RUNNER_TEMP/cann.zip"
+          unzip -q "$RUNNER_TEMP/cann.zip" -d "$RUNNER_TEMP/cann"
+          rm -f "$RUNNER_TEMP/cann.zip"
+          ddk="$RUNNER_TEMP/cann/ddk/ai_ddk_lib"
+          # Fail loudly rather than building a backend against half a DDK.
+          test -d "$ddk/include/graph" || { echo "::error::HiAI graph headers missing"; exit 1; }
+          test -f "$ddk/lib64/libhiai.so" || { echo "::error::HiAI libs missing"; exit 1; }
+          # The signed URL can be rotated, and Huawei numbers the package
+          # independently of the CANN Kit release ("HiAI_DDK_100.600.020.010"
+          # for 6.0.1.0). Report what arrived, and warn when it is not the
+          # revision the backend was written against, so a silent swap shows up
+          # here instead of as a mysterious build failure later.
+          package_version="$(sed -n 's/.*"VERSION":"\([^"]*\)".*/\1/p' "$RUNNER_TEMP/cann/ddk_info" | tr -d '\n')"
+          echo "CANN Kit ${CANN_KIT_VERSION} package reports: ${package_version:-unknown}"
+          if [ -n "${CANN_KIT_DDK_REVISION}" ] && [ "$package_version" != "$CANN_KIT_DDK_REVISION" ]; then
+            echo "::warning::DDK revision changed: expected ${CANN_KIT_DDK_REVISION}, got ${package_version:-unknown}"
           fi
-
-          # The backend is compiled against the DDK but never linked to it:
-          # src/HiaiSupport.cpp supplies the two symbols MNN references directly,
-          # so nothing loads Huawei's runtime unless a request selects the NPU.
           hiai="app/src/main/cpp/3rdparty/MNN/source/backend/hiai/3rdParty"
           mkdir -p "$hiai/arm64-v8a" "$hiai/include"
-          cp "$libdir"/*.so "$hiai/arm64-v8a/"
-          cp -r "$incdir"/. "$hiai/include/"
+          cp "$ddk"/lib64/*.so "$hiai/arm64-v8a/"
+          cp -r "$ddk"/include/. "$hiai/include/"
           mkdir -p app/src/main/assets/hiailibs
-          cp "$libdir"/*.so app/src/main/assets/hiailibs/
-          echo "Staged headers:"; ls "$hiai/include" | head -5
-          echo "Staged runtime libraries:"; ls app/src/main/assets/hiailibs
+          cp "$ddk"/lib64/*.so app/src/main/assets/hiailibs/
+          echo "Staged HiAI headers:"; ls "$hiai/include" | head -5
+          echo "Staged HiAI runtime libraries:"; ls app/src/main/assets/hiailibs
 
       - name: Build libstable_diffusion_core.so
         if: env.REBUILD_NATIVE == 'true'
