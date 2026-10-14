@@ -160,6 +160,24 @@ data class Model(
             else -> "sd15npu"
         }
 
+    /** Whose NPU a model needs. Not interchangeable, hence the distinction. */
+    enum class NpuVendor { QUALCOMM, KIRIN }
+
+    /**
+     * Which vendor's NPU this model needs, or null when it runs on the CPU.
+     * Everything that is not the HiAI/CANN path is QNN today: sd15npu, sdxl and
+     * the DiT kinds all drive the Hexagon DSP. Kept next to [backendType] so the
+     * two cannot drift apart, and so a Kirin model added later is labelled
+     * correctly the moment its type appears.
+     */
+    val npuVendor: NpuVendor?
+        get() = when {
+            runOnCpu -> null
+            backendType.contains("hiai") || backendType.contains("kirin") ->
+                NpuVendor.KIRIN
+            else -> NpuVendor.QUALCOMM
+        }
+
     fun startDownload(context: Context) {
         // A multi-file package carries its sources in packageFiles instead.
         if (isCustom || (fileUri.isEmpty() && packageFiles.isEmpty())) return
@@ -308,6 +326,34 @@ data class Model(
                 "SC", "SA", "SDM", "MSM", "QRB", "X1E", "X1P",
             )
             return prefixes.any { soc.startsWith(it) }
+        }
+
+        /**
+         * Whether this is a Kirin (HiSilicon) device. The vendor NPU is a hard
+         * requirement in both directions: a QNN model needs a Hexagon DSP and a
+         * HiAI/CANN model needs a Da Vinci NPU, and neither can stand in for the
+         * other. Read from a few properties because no single one is populated
+         * across the API levels we support.
+         */
+        fun isKirinDevice(): Boolean {
+            val hay = buildList {
+                add(Build.MANUFACTURER)
+                add(Build.BRAND)
+                add(Build.HARDWARE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    add(Build.SOC_MANUFACTURER)
+                    add(Build.SOC_MODEL)
+                }
+            }.joinToString(" ").lowercase()
+            return hay.contains("hisi") || hay.contains("kirin") ||
+                hay.contains("huawei") || hay.contains("honor")
+        }
+
+        /** Whether this device can run [model]'s NPU at all. */
+        fun isNpuAvailableFor(model: Model): Boolean = when (model.npuVendor) {
+            null -> true
+            NpuVendor.QUALCOMM -> isQualcommDevice()
+            NpuVendor.KIRIN -> isKirinDevice()
         }
 
         fun getChipsetSuffix(soc: String): String? {

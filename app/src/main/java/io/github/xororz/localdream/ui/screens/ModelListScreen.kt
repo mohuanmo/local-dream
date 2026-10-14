@@ -260,6 +260,8 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
     val msgDeleteSuccess = stringResource(R.string.delete_success)
     val msgDeleteFailed = stringResource(R.string.delete_failed)
     val msgUnsupportNpu = stringResource(R.string.unsupport_npu)
+    val msgNeedsQualcommNpu = stringResource(R.string.needs_qualcomm_npu)
+    val msgNeedsKirinNpu = stringResource(R.string.needs_kirin_npu)
     val msgTagImportFailed = stringResource(R.string.tag_import_failed)
     val msgCleanTempNone = stringResource(R.string.clean_temp_none)
     val msgCleanTempDone = stringResource(R.string.clean_temp_done)
@@ -1094,9 +1096,29 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                     }
                                     return@ModelCard
                                 }
-                                if (!Model.isDeviceSupported() && !model.runOnCpu && !model.isCustom) {
+                                // A model whose NPU this device does not have is
+                                // offered but explained, rather than failing deep
+                                // inside the native backend. Skipped in host mode,
+                                // where the run happens on the host's NPU.
+                                val npuVendor = model.npuVendor
+                                val missingNpu = npuVendor != null &&
+                                    !Model.isNpuAvailableFor(model) &&
+                                    !remoteActive
+                                if (missingNpu ||
+                                    (!Model.isDeviceSupported() && !model.runOnCpu && !model.isCustom)
+                                ) {
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(msgUnsupportNpu)
+                                        snackbarHostState.showSnackbar(
+                                            if (missingNpu) {
+                                                if (npuVendor == Model.NpuVendor.KIRIN) {
+                                                    msgNeedsKirinNpu
+                                                } else {
+                                                    msgNeedsQualcommNpu
+                                                }
+                                            } else {
+                                                msgUnsupportNpu
+                                            },
+                                        )
                                     }
                                     return@ModelCard
                                 }
@@ -2319,7 +2341,16 @@ fun ModelCard(
                 },
             ) {
                 Text(
-                    text = if (model.runOnCpu) "CPU" else "NPU",
+                    // Label the vendor, not just "NPU": a QNN model can only run
+                    // on a Hexagon DSP and a HiAI/CANN one only on a Da Vinci
+                    // NPU, so which NPU a model wants is part of reading the list.
+                    text = when (model.npuVendor) {
+                        null -> "CPU"
+                        Model.NpuVendor.QUALCOMM ->
+                            stringResource(R.string.npu_badge_qualcomm)
+                        Model.NpuVendor.KIRIN ->
+                            stringResource(R.string.npu_badge_kirin)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                 )
             }

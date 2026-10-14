@@ -227,6 +227,10 @@
     <string name="battery_optimization_hint">打开系统设置，把本应用设为「不优化」。厂商的省电策略常以此为依据清理后台进程。</string>
     <string name="signal_sigkill_not_oom">注意：当时内存并不紧张。Android 12+ 会限制 App 拉起的子进程（后端正是这样一个进程），厂商省电策略也会清理后台。可在开发者选项里开启「禁用子进程限制」（Android 13+），或通过 adb 执行：settings put global settings_enable_monitor_phantom_procs false</string>
     <string name="backend_retry_failed">后端在生成过程中被系统结束（已重试 %1$d 次）且未能恢复，本次生成已停止。可在设置里开启「后端常驻」，或把本应用加入电池优化白名单。</string>
+    <string name="npu_badge_qualcomm">NPU · 高通</string>
+    <string name="npu_badge_kirin">NPU · 麒麟</string>
+    <string name="needs_qualcomm_npu">此模型需要高通 NPU（Hexagon/骁龙），本机不是高通平台，跑不了这个模型。</string>
+    <string name="needs_kirin_npu">此模型需要华为麒麟 NPU（HiAI/CANN），本机不是麒麟平台，跑不了这个模型。</string>
 
     <!-- Parameter Share -->
     <string name="share">分享</string>

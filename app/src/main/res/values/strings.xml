@@ -236,6 +236,10 @@
     <string name="battery_optimization_hint">Opens the system settings: set this app to \"Not optimised\". Vendor battery savers commonly consult this list when reclaiming background apps.</string>
     <string name="signal_sigkill_not_oom">Note: memory was not tight at the time. Android 12+ restricts child processes spawned by an app -- which this backend is -- and vendor battery savers reclaim background apps as well. Enable \"Disable child process restrictions\" in Developer options (Android 13+), or over ADB: settings put global settings_enable_monitor_phantom_procs false</string>
     <string name="backend_retry_failed">The backend was ended by the system during generation (retried %1$d times) and did not come back, so this run was stopped. Turning on \"Keep the backend resident\" in Settings, or whitelisting this app for battery optimisation, helps.</string>
+    <string name="npu_badge_qualcomm">NPU · Qualcomm</string>
+    <string name="npu_badge_kirin">NPU · Kirin</string>
+    <string name="needs_qualcomm_npu">This model needs a Qualcomm NPU (Hexagon), and this device is not a Qualcomm platform, so it cannot run here.</string>
+    <string name="needs_kirin_npu">This model needs a Huawei Kirin NPU (HiAI/CANN), and this device is not a Kirin platform, so it cannot run here.</string>
 
     <!-- Parameter Share -->
     <string name="share">Share</string>
