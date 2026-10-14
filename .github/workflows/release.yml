@@ -43,14 +43,17 @@ jobs:
       QNN_VERSION: "2.50.0.260828"
       # HiAI DDK, public mirrors (Huawei's own page needs a developer login).
       # The device's HiAI runtime is 100.333.020.100 on a Kirin 810, so the DDK
-      # has to be of that generation or older.
+      # has to be of that generation or older. Paddle Lite's CDN ships several
+      # and its docs name these for "Kirin 810/990"; 330 is the one closest to
+      # this device, and 510 is newer than the device's runtime.
       #
-      # The "_LITE" package is the mixmodel half (libhiai + Caffe/TF adapters) and
-      # does NOT contain libhiai_ir*/graph headers, which is what MNN's backend
-      # needs -- the full package is ${..._LITE}.zip without the suffix.
+      # The "_LITE" package of the same DDK is the mixmodel half (libhiai plus
+      # Caffe/TF adapters) and has no libhiai_ir*/graph headers at all, which is
+      # what MNN's backend needs.
       HIAI_DDK_MIRRORS: |
-        http://cnbj1.fds.api.xiaomi.com/aibench/third_party/HiAI_DDK_100.200.010.011.zip
+        https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_330.tar.gz
         https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_510.tar.gz
+        http://cnbj1.fds.api.xiaomi.com/aibench/third_party/HiAI_DDK_100.200.010.011.zip
       # Printed (and warned about when it differs) rather than enforced: knowing
       # which revision a build used is the whole point of this experiment.
       HIAI_DDK_EXPECTED: ""
