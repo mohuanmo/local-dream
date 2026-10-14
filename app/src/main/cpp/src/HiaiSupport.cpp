@@ -52,6 +52,19 @@ void *resolve(const char *name) {
   return ::dlsym(gHandle, name);
 }
 
+// A missing symbol used to mean the constructor never ran, and the unconstructed
+// hiai::AiContext then faulted inside MNN with nothing in the log to explain it
+// (observed as "signal 11 at 0x1c" with every frame in our own library). Say what
+// is missing instead: that is the difference between a diagnosis and a mystery.
+[[noreturn]] void failMissing(const char *name) {
+  std::fprintf(stderr,
+               "[HIAI] libhiai.so does not export %s: cannot construct "
+               "hiai::AiContext on this device\n",
+               name);
+  std::fflush(stderr);
+  ::abort();
+}
+
 } // namespace
 
 // The mangled names are spelled out so the linker never needs the real library:
@@ -68,25 +81,30 @@ void hiai_ai_context_dtor_d2(void *) asm("_ZN4hiai9AiContextD2Ev");
 
 void hiai_ai_context_ctor_c1(void *self) {
   auto fn = reinterpret_cast<Ctor>(resolve("_ZN4hiai9AiContextC1Ev"));
-  if (fn != nullptr) fn(self);
+  if (fn == nullptr) failMissing("_ZN4hiai9AiContextC1Ev");
+  fn(self);
 }
 
 void hiai_ai_context_ctor_c2(void *self) {
   auto fn = reinterpret_cast<Ctor>(resolve("_ZN4hiai9AiContextC2Ev"));
-  if (fn != nullptr) fn(self);
+  if (fn == nullptr) failMissing("_ZN4hiai9AiContextC2Ev");
+  fn(self);
 }
 
 void hiai_ai_context_dtor_d0(void *self, int flag) {
   auto fn = reinterpret_cast<DeletingDtor>(resolve("_ZN4hiai9AiContextD0Ev"));
-  if (fn != nullptr) fn(self, flag);
+  if (fn == nullptr) failMissing("_ZN4hiai9AiContextD0Ev");
+  fn(self, flag);
 }
 
 void hiai_ai_context_dtor_d1(void *self) {
   auto fn = reinterpret_cast<Dtor>(resolve("_ZN4hiai9AiContextD1Ev"));
-  if (fn != nullptr) fn(self);
+  if (fn == nullptr) failMissing("_ZN4hiai9AiContextD1Ev");
+  fn(self);
 }
 
 void hiai_ai_context_dtor_d2(void *self) {
   auto fn = reinterpret_cast<Dtor>(resolve("_ZN4hiai9AiContextD2Ev"));
-  if (fn != nullptr) fn(self);
+  if (fn == nullptr) failMissing("_ZN4hiai9AiContextD2Ev");
+  fn(self);
 }

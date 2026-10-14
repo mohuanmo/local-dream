@@ -66,6 +66,13 @@ class BackendService : Service() {
 
         // Printed once per kernel by MNN's OpenCL LWS tuner.
         private const val TUNING_KERNEL_LINE = "lws tune res"
+        // Huawei's runtime reports its own version, and this build compiles
+        // against a fixed DDK; the two have to be compatible.
+        private const val HIAI_VERSION_LINE = "[NPU] ddk currentversion"
+        // MNN's hiai backend logs one of these per op it cannot put on the NPU.
+        private const val HIAI_FALLBACK_LINE = "[NPU] Don't support type"
+        private const val HIAI_CREATOR_FALLBACK_LINE = "[NPU] The Creator Don't support type"
+        private const val HIAI_SAMPLE_LIMIT = 6
 
         // Where the backend's own output is mirrored, relative to ModelStorage
         // root (Download/LocalDream by default).
@@ -904,6 +911,14 @@ class BackendService : Service() {
             // The in-app capture runs `logcat --pid=<this app>`, and Android
             // restricts logcat for normal apps anyway, so without this a backend
             // crash leaves no usable evidence.
+            // Captured from the backend's own output while it runs: which HiAI
+            // runtime this device has, and how many ops MNN could not put on the
+            // NPU. Both end up in the log the user can hand over, which is where
+            // they are useful -- not in the UI.
+            var hiaiRuntimeVersion = ""
+            var hiaiFallbackOps = 0
+            val hiaiFallbackSamples = mutableListOf<String>()
+
             openBackendLog()
             val exitCode = try {
                 proc.inputStream.bufferedReader().use { reader ->
@@ -918,6 +933,28 @@ class BackendService : Service() {
                             StateHolder._tuningKernelCount.value =
                                 StateHolder._tuningKernelCount.value + 1
                         }
+                        // Huawei's runtime names its own version, and this build is
+                        // compiled against a fixed DDK: the two have to be
+                        // compatible, so remembering it turns an unexplained fault
+                        // into "the runtime here is older than this build expects".
+                        if (text.contains(HIAI_VERSION_LINE)) {
+                            hiaiRuntimeVersion = text.substringAfterLast(':').trim()
+                            backendLogLine("[APP] device HiAI runtime: $hiaiRuntimeVersion")
+                        }
+                        // One line per op the hiai backend could not put on the NPU,
+                        // which is the fallback statistic worth having: it is what
+                        // says whether the NPU is doing anything at all.
+                        if (text.contains(HIAI_FALLBACK_LINE) ||
+                            text.contains(HIAI_CREATOR_FALLBACK_LINE)
+                        ) {
+                            hiaiFallbackOps += 1
+                            if (hiaiFallbackSamples.size < HIAI_SAMPLE_LIMIT) {
+                                hiaiFallbackSamples.add(
+                                    text.substringAfter("type", "").trim()
+                                        .removePrefix("=").trim().take(48),
+                                )
+                            }
+                        }
                     }
                 }
                 proc.waitFor()
@@ -931,6 +968,17 @@ class BackendService : Service() {
                 return@Thread
             }
             Log.i(TAG, "Backend process exited with code: $exitCode")
+            // One line that answers "so what actually ran where" for an NPU run.
+            if (hiaiRuntimeVersion.isNotEmpty() || hiaiFallbackOps > 0) {
+                val samples =
+                    if (hiaiFallbackSamples.isEmpty()) ""
+                    else " (" + hiaiFallbackSamples.joinToString() + ")"
+                backendLogLine(
+                    "[APP] hiai summary: device-runtime=" +
+                        hiaiRuntimeVersion.ifEmpty { "?" } +
+                        " fallback-ops=$hiaiFallbackOps$samples",
+                )
+            }
             backendLogLine(describeBackendExit(exitCode))
             closeBackendLog()
             // Only surface as an error when this is still the active process and
