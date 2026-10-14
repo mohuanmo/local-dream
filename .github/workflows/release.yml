@@ -43,11 +43,14 @@ jobs:
       QNN_VERSION: "2.50.0.260828"
       # HiAI DDK, public mirrors (Huawei's own page needs a developer login).
       # The device's HiAI runtime is 100.333.020.100 on a Kirin 810, so the DDK
-      # has to be of that generation or older: 100.200 (Xiaomi's mirror, the same
-      # package its README carries a sha256 for) is tried first, then Paddle
-      # Lite's own CDN, whose docs name Kirin 810/990 for what it ships.
-      HIAI_DDK_XIAOMI_URL: "http://cnbj1.fds.api.xiaomi.com/aibench/third_party/HiAI_DDK_100.200.010.011_LITE.zip"
-      HIAI_DDK_PADDLE_URL: "https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_510.tar.gz"
+      # has to be of that generation or older.
+      #
+      # The "_LITE" package is the mixmodel half (libhiai + Caffe/TF adapters) and
+      # does NOT contain libhiai_ir*/graph headers, which is what MNN's backend
+      # needs -- the full package is ${..._LITE}.zip without the suffix.
+      HIAI_DDK_MIRRORS: |
+        http://cnbj1.fds.api.xiaomi.com/aibench/third_party/HiAI_DDK_100.200.010.011.zip
+        https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_510.tar.gz
       # Printed (and warned about when it differs) rather than enforced: knowing
       # which revision a build used is the whole point of this experiment.
       HIAI_DDK_EXPECTED: ""
@@ -196,7 +199,7 @@ jobs:
           set -e
           pkg="$RUNNER_TEMP/ddk.pkg"
           ok=""
-          for url in "$HIAI_DDK_XIAOMI_URL" "$HIAI_DDK_PADDLE_URL"; do
+          for url in $HIAI_DDK_MIRRORS; do
             echo "Trying $url"
             if curl -fL --retry 2 --retry-delay 3 -A "Mozilla/5.0" --max-time 600 \
                  "$url" -o "$pkg"; then
@@ -216,12 +219,26 @@ jobs:
             *)      echo "::error::unrecognised DDK archive"; exit 1 ;;
           esac
 
+          # Print what actually arrived. The "_LITE" package is the mixmodel half
+          # and lacks the ir/graph pieces entirely, so a "not found" below is
+          # easier to read next to this listing.
+          echo "Package contains:"; find "$dir" -maxdepth 3 -mindepth 1 -type d | head -20
+
           # Prefer the 64-bit set when a package ships both ABIs.
           lib=$(find "$dir" -path '*lib64*' -name libhiai.so | head -1)
           [ -n "$lib" ] || lib=$(find "$dir" -name libhiai.so | head -1)
           test -n "$lib" || { echo "::error::libhiai.so not found in the package"; exit 1; }
           inc=$(find "$dir" -type d -name graph | head -1)
-          test -n "$inc" || { echo "::error::HiAI graph headers not found"; exit 1; }
+          test -n "$inc" || {
+            echo "::error::HiAI graph headers not found: this looks like the _LITE (mixmodel) package, which has no ir/graph half"
+            exit 1
+          }
+          for need in libhiai_ir.so libhiai_ir_build.so; do
+            find "$dir" -name "$need" | head -1 | grep -q . || {
+              echo "::error::$need not found: MNN's hiai backend needs the full DDK"
+              exit 1
+            }
+          done
           libdir="$(dirname "$lib")"
           incdir="$(dirname "$inc")"
           echo "Libraries: $libdir"
