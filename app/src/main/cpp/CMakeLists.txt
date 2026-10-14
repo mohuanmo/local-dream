@@ -94,6 +94,14 @@ set(MNN_SUPPORT_TRANSFORMER_FUSE ON CACHE BOOL "" FORCE)
 # there.
 set(MNN_VULKAN ON CACHE BOOL "" FORCE)
 set(MNN_VULKAN_IMAGE ON CACHE BOOL "" FORCE)
+# Huawei's NPU, wired up exactly as MNN's own wiki describes: the DDK headers
+# and libraries are staged into source/backend/hiai/3rdParty/{arm64-v8a,include}
+# by the release workflow, and the backend registers itself as an extra runtime.
+# Select it with MNN_FORWARD_USER_0. MNN's hiai backend never mentions
+# MNN_FORWARD_VULKAN-style enum entries of its own, and unlike OpenCL it is not
+# called from registerBackend() either, so it relies on the --whole-archive
+# below to have its registration initializer run.
+set(MNN_NPU ON CACHE BOOL "" FORCE)
 add_subdirectory(3rdparty/MNN)
 
 set(XTENSOR_USE_XSIMD ON)

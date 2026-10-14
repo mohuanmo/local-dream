@@ -41,6 +41,13 @@ jobs:
       NDK_VERSION: "28.0.13004108"
       # Must match the QNN SDK revision CMakeLists.txt is written against.
       QNN_VERSION: "2.50.0.260828"
+      # HiAI / CANN Kit DDK, from Huawei's public package URL -- the same one
+      # the developer docs hand out. Signed, so it needs refreshing when it
+      # expires: grab a new link from
+      # https://developer.huawei.com/consumer/cn/doc/hiai-Library/ddk-download-0000001053590180
+      # (sign-in required) and keep CANN_KIT_VERSION in step with it.
+      CANN_KIT_VERSION: "6.0.1.0"
+      CANN_KIT_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/72/v3/TBwJDEdBQLCcNiK1n-7z3g/CANN-Kit-6.0.1.0.zip?HW-CC-KV=V1&HW-CC-Date=20251222T032900Z&HW-CC-Expire=315360000&HW-CC-Sign=C7B3FE4EDCAEBD39D227B7FD2C0F244F489640CA06DC47F1F6B8C74D85384AC6"
       # tokenizers-cpp's Rust crate trips `dangerous_implicit_autorefs`, which
       # newer rustc denies by default. Pin the toolchain the project's shipped
       # libraries were actually built with (rustc path baked into the .so).
@@ -162,6 +169,37 @@ jobs:
           test -f "$root/lib/aarch64-android/libQnnHtp.so" || { echo "::error::QNN aarch64 libs missing under $root/lib/aarch64-android"; exit 1; }
           echo "QNN_SDK_ROOT=$root" >> "$GITHUB_ENV"
           ls "$root"
+
+      # MNN's hiai backend needs Huawei's DDK headers and libraries in an exact
+      # layout under source/backend/hiai/3rdParty. Staged before the core build,
+      # and the runtime libraries are copied into jniLibs as well: the backend
+      # links against libhiai.so, so the loader has to find it on device.
+      #
+      # The backend is compiled in so the app can offer a Kirin path next to the
+      # Qualcomm one; it is only used when a request selects it.
+      - name: Download CANN Kit DDK (HiAI)
+        if: env.REBUILD_NATIVE == 'true'
+        run: |
+          echo "Downloading CANN Kit ${CANN_KIT_VERSION} DDK"
+          # The CDN answers 403 without browser-ish headers.
+          curl -fL --retry 3 --retry-delay 5 \
+            -A "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36" \
+            -e "https://developer.huawei.com/" \
+            "$CANN_KIT_URL" -o "$RUNNER_TEMP/cann.zip"
+          unzip -q "$RUNNER_TEMP/cann.zip" -d "$RUNNER_TEMP/cann"
+          rm -f "$RUNNER_TEMP/cann.zip"
+          ddk="$RUNNER_TEMP/cann/ddk/ai_ddk_lib"
+          # Fail loudly rather than building a backend against half a DDK.
+          test -f "$ddk/lib64/libhiai.so" || { echo "::error::HiAI libs missing under $ddk/lib64"; exit 1; }
+          test -d "$ddk/include/graph" || { echo "::error::HiAI graph headers missing under $ddk/include"; exit 1; }
+          hiai="app/src/main/cpp/3rdparty/MNN/source/backend/hiai/3rdParty"
+          mkdir -p "$hiai/arm64-v8a" "$hiai/include"
+          cp "$ddk"/lib64/*.so "$hiai/arm64-v8a/"
+          cp -r "$ddk"/include/. "$hiai/include/"
+          # Runtime copies: whatever libhiai*.so pulls in must ship too.
+          cp "$ddk"/lib64/*.so app/src/main/jniLibs/arm64-v8a/
+          echo "Staged HiAI libs:"; ls "$hiai/arm64-v8a"
+          echo "Staged HiAI headers:"; ls "$hiai/include" | head
 
       - name: Build libstable_diffusion_core.so
         if: env.REBUILD_NATIVE == 'true'
