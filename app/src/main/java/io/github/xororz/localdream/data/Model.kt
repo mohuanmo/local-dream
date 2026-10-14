@@ -329,7 +329,7 @@ data class Model(
             // Build.SOC_MODEL only exists from API 31 and getDeviceSoc() reports
             // "CPU" below that, which would otherwise refuse every NPU model on
             // older Qualcomm devices. Fall back to what the board reports.
-            val board = listOf(Build.HARDWARE, Build.BOARD, Build.PLATFORM)
+            val board = listOf(Build.HARDWARE, Build.BOARD)
                 .joinToString(" ").lowercase()
             return Regex("\\b(qcom|msm|sdm|sm[0-9]{4}|snapdragon)").containsMatchIn(board)
         }
@@ -352,7 +352,6 @@ data class Model(
                 }
                 add(Build.HARDWARE)
                 add(Build.BOARD)
-                add(Build.PLATFORM)
             }.joinToString(" ").lowercase()
             return hay.contains("hisilicon") ||
                 hay.contains("kirin") ||
