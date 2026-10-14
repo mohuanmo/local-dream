@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.createBitmap
 import io.github.xororz.localdream.R
+import io.github.xororz.localdream.data.Model
 import io.github.xororz.localdream.data.NativeCore
 import io.github.xororz.localdream.utils.Http
 import java.io.BufferedReader
