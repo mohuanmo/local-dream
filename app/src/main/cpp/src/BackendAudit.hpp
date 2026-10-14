@@ -56,6 +56,12 @@ constexpr size_t kMaxListed = 24;
 inline void report(MNN::Interpreter *interpreter, const MNN::Session *session,
                    const std::string &modelPath, const char *stage,
                    MNNForwardType requested) {
+  // Never audit a Huawei session: the audit walks the session's tensors, and with
+  // the device's HiAI runtime built against a different DDK those calls can fault
+  // by themselves -- which would put a frame of ours in the backtrace and send
+  // the diagnosis of an NPU fault to the wrong place. Enable it once an NPU
+  // session can be built and run.
+  if (requested == MNN_FORWARD_USER_0) return;
   if (modelPath.empty() || session == nullptr) return;
 
   std::ifstream file(modelPath, std::ios::binary);
