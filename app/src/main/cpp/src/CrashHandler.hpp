@@ -15,22 +15,53 @@
 //  dladdr() reads the dynamic symbol table, so it still works on the stripped
 //  binaries we ship.
 //
+//  Android's bionic has no glibc-style backtrace()/execinfo.h, so the stack is
+//  walked with the C++ unwinder that ships with the NDK instead. Only the
+//  addresses matter: dladdr() turns each one into a module and an offset.
+//
 #pragma once
 
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
-#include <execinfo.h>
+#include <unwind.h>
 #include <unistd.h>
 
 namespace crash_handler {
 
-// Alternates off the alt stack, so a fault caused by a blown stack can still be
-// reported.
+// Fixed rather than SIGSTKSZ: that macro stopped being a compile-time constant
+// in newer libc, which would break the array below.
+constexpr size_t kAltStackSize = 64 * 1024;
+
 inline char *altStack() {
-  static char buffer[SIGSTKSZ * 4];
+  static char buffer[kAltStackSize];
   return buffer;
+}
+
+struct FrameCollector {
+  void **frames;
+  int count;
+  int capacity;
+};
+
+inline _Unwind_Reason_Code collectFrame(struct _Unwind_Context *context, void *arg) {
+  auto *collector = static_cast<FrameCollector *>(arg);
+  if (collector->count >= collector->capacity) {
+    return _URC_END_OF_STACK;
+  }
+  const uintptr_t address = _Unwind_GetIP(context);
+  if (address != 0) {
+    collector->frames[collector->count++] = reinterpret_cast<void *>(address);
+  }
+  return _URC_NO_REASON;
+}
+
+inline int walkStack(void **frames, int capacity) {
+  FrameCollector collector{frames, 0, capacity};
+  _Unwind_Backtrace(collectFrame, &collector);
+  return collector.count;
 }
 
 inline void writeFrame(int index, void *address) {
@@ -62,7 +93,7 @@ inline void handler(int signal, siginfo_t *info, void *) {
   ::write(STDERR_FILENO, header, ::strlen(header));
 
   void *frames[64];
-  const int count = ::backtrace(frames, 64);
+  const int count = walkStack(frames, 64);
   for (int i = 0; i < count; ++i) {
     writeFrame(i, frames[i]);
   }
@@ -77,7 +108,7 @@ inline void handler(int signal, siginfo_t *info, void *) {
 inline void install() {
   stack_t stack{};
   stack.ss_sp = altStack();
-  stack.ss_size = SIGSTKSZ * 4;
+  stack.ss_size = kAltStackSize;
   ::sigaltstack(&stack, nullptr);
 
   struct sigaction action {};
