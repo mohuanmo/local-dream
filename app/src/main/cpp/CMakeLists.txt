@@ -94,12 +94,15 @@ set(MNN_SUPPORT_TRANSFORMER_FUSE ON CACHE BOOL "" FORCE)
 # there.
 set(MNN_VULKAN ON CACHE BOOL "" FORCE)
 set(MNN_VULKAN_IMAGE ON CACHE BOOL "" FORCE)
-# Huawei's NPU, wired up as MNN's wiki describes: the DDK headers and libraries
-# are staged into source/backend/hiai/3rdParty/{arm64-v8a,include} by the
-# release workflow, and the backend registers itself under MNN_FORWARD_USER_0.
+# Huawei's NPU is parked, not wired up. MNN's hiai backend compiles fine against
+# CANN Kit 6.0.1.0, but making it work needed libhiai* linked into the core, and
+# that turned into a hard DT_NEEDED that every device loads at startup: Huawei's
+# runtime then aborted the process (libc++abi: terminating, SIGABRT) instead of
+# reporting that it would not serve us. Revisit only with a design where a
+# missing or refusing library cannot take the whole app down with it.
 #
-# Only enabled when the DDK is actually staged, so a build without it still
-# works and simply has no Kirin path.
+# The switch below is conditional so that staging the DDK (headers plus
+# libraries under source/backend/hiai/3rdParty) is all it takes to try again.
 set(HIAI_DDK_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/MNN/source/backend/hiai/3rdParty"
     CACHE PATH "HiAI / CANN Kit DDK staged for MNN's NPU backend")
@@ -107,13 +110,6 @@ set(HIAI_LIBS "")
 if(EXISTS "${HIAI_DDK_ROOT}/arm64-v8a/libhiai.so" AND
    EXISTS "${HIAI_DDK_ROOT}/include/hiai_ir_build.h")
     set(MNN_NPU ON CACHE BOOL "" FORCE)
-    # MNN_BUILD_SHARED_LIBS=OFF forces MNN_SEP_BUILD=OFF, and that is the one
-    # branch of its hiai CMakeLists that does not link Huawei's libraries.
-    # MNN's dynamic trampolines cover the HiAI calls except two: hiai::AiContext's
-    # constructor and destructor, which a C++ ctor cannot route through a
-    # trampoline. Those two have to resolve against the real library, which makes
-    # libhiai.so a hard DT_NEEDED of the core -- so the whole set ships in the
-    # APK. Without them the core would fail to load at all, on any device.
     foreach(lib hiai_ir_build hiai_ir hiai)
         list(APPEND HIAI_LIBS "${HIAI_DDK_ROOT}/arm64-v8a/lib${lib}.so")
     endforeach()

@@ -227,6 +227,16 @@ fun ModelRunScreen(
     // String resources hoisted to composable scope (lint: LocalContextGetResourceValueCall).
     val msgMediaPermissionHint = stringResource(R.string.media_permission_hint)
     val msgBackendFailed = stringResource(R.string.backend_failed)
+    // The health check only knows that the backend is unreachable; BackendService
+    // usually knows why (a signal, an exit code, the path to the log). Append it:
+    // "maybe your device is not supported" once sent us hunting for a device
+    // problem while the log plainly said
+    // "library libhiai_ir_build.so not found".
+    fun backendFailureText(fallback: String): String {
+        val reason =
+            (BackendService.backendState.value as? BackendService.BackendState.Error)?.message
+        return if (reason.isNullOrBlank() || reason == fallback) fallback else "$fallback\n$reason"
+    }
     val msgImportNoParams = stringResource(R.string.import_no_params)
     val msgImageSaved = stringResource(R.string.image_saved)
     val msgDeleted = stringResource(R.string.deleted)
@@ -1893,7 +1903,7 @@ fun ModelRunScreen(
             val client = remoteClient
             if (client == null) {
                 isCheckingBackend = false
-                errorMessage = msgBackendFailed
+                errorMessage = backendFailureText(msgBackendFailed)
                 return
             }
             checkRemoteBackendHealth(
@@ -1907,7 +1917,7 @@ fun ModelRunScreen(
                 },
                 onUnhealthy = {
                     isCheckingBackend = false
-                    errorMessage = msgBackendFailed
+                    errorMessage = backendFailureText(msgBackendFailed)
                 },
             )
         } else {
@@ -1921,7 +1931,7 @@ fun ModelRunScreen(
                 },
                 onUnhealthy = {
                     isCheckingBackend = false
-                    errorMessage = msgBackendFailed
+                    errorMessage = backendFailureText(msgBackendFailed)
                 },
             )
         }

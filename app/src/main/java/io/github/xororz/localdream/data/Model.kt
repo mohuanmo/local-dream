@@ -325,28 +325,41 @@ data class Model(
                 "SM", "QCS", "QCM", "CQ", "IPQ", "SXR", "AIC", "SSG",
                 "SC", "SA", "SDM", "MSM", "QRB", "X1E", "X1P",
             )
-            return prefixes.any { soc.startsWith(it) }
+            if (prefixes.any { soc.startsWith(it) }) return true
+            // Build.SOC_MODEL only exists from API 31 and getDeviceSoc() reports
+            // "CPU" below that, which would otherwise refuse every NPU model on
+            // older Qualcomm devices. Fall back to what the board reports.
+            val board = listOf(Build.HARDWARE, Build.BOARD, Build.PLATFORM)
+                .joinToString(" ").lowercase()
+            return Regex("\\b(qcom|msm|sdm|sm[0-9]{4}|snapdragon)").containsMatchIn(board)
         }
 
         /**
-         * Whether this is a Kirin (HiSilicon) device. The vendor NPU is a hard
-         * requirement in both directions: a QNN model needs a Hexagon DSP and a
-         * HiAI/CANN model needs a Da Vinci NPU, and neither can stand in for the
-         * other. Read from a few properties because no single one is populated
-         * across the API levels we support.
+         * Whether this device has a Kirin (HiSilicon) NPU.
+         *
+         * Deliberately about the silicon, not the brand: Honor split from Huawei
+         * and now ships Snapdragon parts, so "the manufacturer is HONOR" would
+         * offer a Kirin path on a device that actually has a Hexagon, and would
+         * miss older Huawei phones. Build.SOC_MANUFACTURER/SOC_MODEL exist from
+         * API 31; on older versions the board/hardware strings are the only
+         * signal (Huawei reports values like "kirin980" or "hi3650").
          */
         fun isKirinDevice(): Boolean {
             val hay = buildList {
-                add(Build.MANUFACTURER)
-                add(Build.BRAND)
-                add(Build.HARDWARE)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     add(Build.SOC_MANUFACTURER)
                     add(Build.SOC_MODEL)
                 }
+                add(Build.HARDWARE)
+                add(Build.BOARD)
+                add(Build.PLATFORM)
             }.joinToString(" ").lowercase()
-            return hay.contains("hisi") || hay.contains("kirin") ||
-                hay.contains("huawei") || hay.contains("honor")
+            return hay.contains("hisilicon") ||
+                hay.contains("kirin") ||
+                // "hisi" appears both in HiSilicon and in the older hi3xxx/hi6xxx
+                // part names.
+                Regex("\\bhisi").containsMatchIn(hay) ||
+                Regex("\\bhi[36][0-9]{3}").containsMatchIn(hay)
         }
 
         /** Whether this device can run [model]'s NPU at all. */
