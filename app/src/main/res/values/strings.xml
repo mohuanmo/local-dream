@@ -242,6 +242,7 @@
     <string name="needs_kirin_npu">This model needs a Huawei Kirin NPU (HiAI/CANN), and this device is not a Kirin platform, so it cannot run here.</string>
     <string name="npu_hiai_backend">Use Huawei\'s NPU (experimental)</string>
     <string name="npu_hiai_backend_hint">⚠️ Experimental, off by default: runs .mnn models on the Kirin NPU (Da Vinci). Huawei\'s libraries are loaded only while this is on and a generation is actually running — with it off, not a byte of them is touched. Whether it works depends on your device and on Huawei serving an app it has not registered; if the backend crashes, come back and switch it off. Applies to CPU models (.mnn) only.</string>
+    <string name="hiai_disabled_after_crash">The Kirin NPU backend crashed inside Huawei\'s runtime, so the switch has been turned off for you (the next generation goes back to CPU / GPU). The backend log has a [CRASH] backtrace — send it over and it will say whether the fault was inside Huawei\'s libraries or elsewhere.</string>
 
     <!-- Parameter Share -->
     <string name="share">Share</string>

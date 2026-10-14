@@ -279,6 +279,14 @@ class BackgroundGenerationService : Service() {
     }
 
     /**
+     * Whether this run is meant to go through Huawei's NPU. Read from the same
+     * two conditions the request uses, so the failure handling below can tell a
+     * fault in Huawei's runtime from an ordinary backend death.
+     */
+    private fun prefersHiaiBackend(): Boolean =
+        NativeCore.prefersHiai(this) && Model.isKirinDevice()
+
+    /**
      * Whether a failed run is worth re-issuing. Only a backend that vanished
      * counts: a request the backend rejected, a missing model, or a cancelled
      * run would fail the same way again. The message BackendService publishes
@@ -288,6 +296,11 @@ class BackgroundGenerationService : Service() {
      */
     private fun shouldRetryAfterBackendDeath(e: Exception, attempt: Int): Boolean {
         if (attempt >= MAX_GENERATION_RETRIES) return false
+        // Retrying is for a backend that vanished for an environmental reason.
+        // A fault inside Huawei's runtime is not one of those: the same request
+        // would fault in the same place, and the user would sit through two more
+        // attempts (and their waits) for nothing.
+        if (prefersHiaiBackend()) return false
         val reported = (BackendService.backendState.value as? BackendService.BackendState.Error)
             ?.message ?: return false
         val crashLike = reported.contains("SIG") ||
@@ -789,7 +802,20 @@ class BackgroundGenerationService : Service() {
                         e.message
                             ?: this@BackgroundGenerationService.getString(R.string.unknown_error)
                 }
-                updateState(GenerationState.Error(message))
+                // A fault inside Huawei's runtime is not something a retry can fix,
+                // and leaving the experiment on would just fault again next time.
+                // Switch it off and say so where the user will read it.
+                val finalMessage = if (prefersHiaiBackend()) {
+                    NativeCore.setHiaiEnabled(this@BackgroundGenerationService, false)
+                    message +
+                        "\n\n" +
+                        this@BackgroundGenerationService.getString(
+                            R.string.hiai_disabled_after_crash,
+                        )
+                } else {
+                    message
+                }
+                updateState(GenerationState.Error(finalMessage))
             }
             stopSelf()
         } finally {

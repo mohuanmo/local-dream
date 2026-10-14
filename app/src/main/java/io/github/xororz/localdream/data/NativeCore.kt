@@ -91,6 +91,18 @@ object NativeCore {
             .getBoolean(PREF_HIAI_BACKEND, false)
 
     /**
+     * Turns the Huawei NPU experiment on or off. The backend switches it off by
+     * itself after a fault inside Huawei's runtime, so a user who hit that does
+     * not keep walking into it.
+     */
+    fun setHiaiEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_HIAI_BACKEND, enabled)
+            .apply()
+    }
+
+    /**
      * SharedPreferences key holding the GPU compute precision: "fp16" (default,
      * half arithmetic) or "fp32" (full precision). The CPU path always runs
      * fp32: Precision_Low there enables arm82 fp16, which corrupted the CLIP

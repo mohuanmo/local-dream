@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "Config.hpp"
+#include "CrashHandler.hpp"
 #include "MnnUtils.hpp"
 #include "Pipeline.hpp"
 #include "PipelineAnima.hpp"
@@ -824,6 +825,9 @@ int main(int argc, char **argv) {
   // flushing per line is what makes them observable.
   setvbuf(stdout, nullptr, _IOLBF, 0);
   setvbuf(stderr, nullptr, _IOLBF, 0);
+  // Before anything else: a fault inside a vendor runtime should say where it
+  // was, rather than leaving the log stopped mid-sentence.
+  crash_handler::install();
   if (!qnn::log::initializeLogging()) {
     std::cerr << "ERROR: Init logging failed!\n";
     return EXIT_FAILURE;
