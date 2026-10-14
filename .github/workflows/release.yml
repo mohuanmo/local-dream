@@ -196,8 +196,14 @@ jobs:
           mkdir -p "$hiai/arm64-v8a" "$hiai/include"
           cp "$ddk"/lib64/*.so "$hiai/arm64-v8a/"
           cp -r "$ddk"/include/. "$hiai/include/"
-          # Runtime copies: whatever libhiai*.so pulls in must ship too.
-          cp "$ddk"/lib64/*.so app/src/main/jniLibs/arm64-v8a/
+          # The runtime libraries must reach the backend's runtime directory,
+          # which is what LD_LIBRARY_PATH points at: the core library now has a
+          # hard DT_NEEDED on libhiai*, and jniLibs (the APK's lib directory) is
+          # not on that search path. The app stages everything under
+          # assets/qnnlibs and assets/hiailibs into that directory at startup.
+          mkdir -p app/src/main/assets/hiailibs
+          cp "$ddk"/lib64/*.so app/src/main/assets/hiailibs/
+          echo "Staged HiAI runtime libraries:"; ls app/src/main/assets/hiailibs
           echo "Staged HiAI libs:"; ls "$hiai/arm64-v8a"
           echo "Staged HiAI headers:"; ls "$hiai/include" | head
 

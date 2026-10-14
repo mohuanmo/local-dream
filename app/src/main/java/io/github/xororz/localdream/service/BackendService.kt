@@ -433,31 +433,37 @@ class BackendService : Service() {
             runtimeDir = prepareRuntimeDirRoot(filesDir)
 
             try {
-                val qnnlibsAssets = assets.list("qnnlibs")
-                qnnlibsAssets?.forEach { fileName ->
-                    val targetLib = File(runtimeDir, fileName)
+                // Both sets are staged here because the runtime directory is on
+                // LD_LIBRARY_PATH and the core library carries hard DT_NEEDEDs
+                // for them: the QNN HTP libraries, and the HiAI/CANN ones the
+                // Kirin backend needs. jniLibs lives in the APK's lib directory,
+                // which is not on that search path.
+                for (folder in listOf("qnnlibs", "hiailibs")) {
+                    assets.list(folder)?.forEach { fileName ->
+                        val targetLib = File(runtimeDir, fileName)
 
-                    val needsCopy = !targetLib.exists() ||
-                        run {
-                            val assetInputStream = assets.open("qnnlibs/$fileName")
-                            val assetSize = assetInputStream.use { it.available().toLong() }
-                            targetLib.length() != assetSize
-                        }
-
-                    if (needsCopy) {
-                        val assetInputStream = assets.open("qnnlibs/$fileName")
-                        assetInputStream.use { input ->
-                            targetLib.outputStream().use { output ->
-                                input.copyTo(output)
+                        val needsCopy = !targetLib.exists() ||
+                            run {
+                                val assetInputStream = assets.open("$folder/$fileName")
+                                val assetSize = assetInputStream.use { it.available().toLong() }
+                                targetLib.length() != assetSize
                             }
-                        }
-                        Log.d(TAG, "Copied $fileName from assets to runtime directory")
-                    }
 
-                    targetLib.setReadable(true, true)
-                    targetLib.setExecutable(true, true)
+                        if (needsCopy) {
+                            val assetInputStream = assets.open("$folder/$fileName")
+                            assetInputStream.use { input ->
+                                targetLib.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            Log.d(TAG, "Copied $folder/$fileName to runtime directory")
+                        }
+
+                        targetLib.setReadable(true, true)
+                        targetLib.setExecutable(true, true)
+                    }
                 }
-                Log.i(TAG, "QNN libraries prepared in runtime directory")
+                Log.i(TAG, "NPU libraries prepared in runtime directory")
 
                 // The DiT engine's Hexagon skels share this directory: it is
                 // already on the DSP search path, and they are only useful on
