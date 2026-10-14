@@ -116,19 +116,42 @@ if(EXISTS "${HIAI_DDK_ROOT}/arm64-v8a/libhiai.so" AND
     # Linking them made them hard DT_NEEDEDs, and their initialisers abort the
     # process on load -- which took every device down with it.
     set(HIAI_SUPPORT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/HiaiSupport.cpp")
-    list(APPEND PACKAGE_INCLUDES "${HIAI_DDK_ROOT}/include")
+    set(SDCORE_HIAI_INCLUDES "${HIAI_DDK_ROOT}/include")
     message(STATUS "HiAI backend enabled (libraries loaded on demand)")
 else()
     set(MNN_NPU OFF CACHE BOOL "" FORCE)
     set(HIAI_SUPPORT_SRC "")
     message(STATUS "HiAI DDK not staged: building without the Kirin path")
 endif()
+# Per-op backend audit: needs MNN's generated flatbuffer schema and the
+# flatbuffers runtime it was compiled against, both inside the MNN tree. Guarded
+# so a missing one only means no audit, never a broken build.
+set(MNN_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/${MNN_ROOT_DIR}")
+if(EXISTS "${MNN_SOURCE_ROOT}/schema/current/MNN_generated.h" AND
+   EXISTS "${MNN_SOURCE_ROOT}/3rdparty/flatbuffers/include/flatbuffers/flatbuffers.h" AND
+   EXISTS "${MNN_SOURCE_ROOT}/source/core/Backend.hpp")
+    set(SDCORE_OP_AUDIT ON)
+    set(SDCORE_OP_AUDIT_INCLUDES
+        "${MNN_SOURCE_ROOT}/schema/current"
+        "${MNN_SOURCE_ROOT}/source"
+        "${MNN_SOURCE_ROOT}/3rdparty/flatbuffers/include")
+    message(STATUS "Per-op backend audit enabled")
+else()
+    set(SDCORE_OP_AUDIT OFF)
+    message(STATUS "Per-op backend audit disabled: MNN schema headers unavailable")
+endif()
+
 add_subdirectory(3rdparty/MNN)
 
 set(XTENSOR_USE_XSIMD ON)
 
 set(PACKAGE_INCLUDES
     ${MNN_ROOT_DIR}/include
+    # Empty unless the matching block above enabled them: PACKAGE_INCLUDES is
+    # assigned here, after those checks, so anything appended before this point
+    # would be discarded.
+    ${SDCORE_HIAI_INCLUDES}
+    ${SDCORE_OP_AUDIT_INCLUDES}
     ${QNN_SDK_ROOT}/include/QNN
     ${CMAKE_CURRENT_SOURCE_DIR}/include/
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -221,6 +244,10 @@ foreach(mem_mode IN ITEMS image buffer)
     if(NOT HIAI_SUPPORT_SRC STREQUAL "")
         # Enables the on-demand registration path in MnnUtils.hpp.
         target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_HIAI_ENABLED=1)
+    endif()
+    if(SDCORE_OP_AUDIT)
+        # Enables BackendAudit.hpp: which ops fell back off the requested backend.
+        target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_OP_AUDIT=1)
     endif()
     if(mem_mode STREQUAL "image")
         target_compile_definitions(${TARGET_NAME} PRIVATE SDCORE_GPU_MEMORY_IMAGE=1)

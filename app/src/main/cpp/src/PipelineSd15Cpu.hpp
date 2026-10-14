@@ -267,6 +267,17 @@ class PipelineSd15Cpu : public Pipeline {
     opts.use_hiai = req.use_hiai;
     opts.stage = stage;
     opts.width = req.width;
+    // The per-op backend audit (MnnUtils) reads the model to name the ops that
+    // did not get the requested backend; the stage names map onto the file
+    // layout under model_dir_.
+    const std::string stageName = stage != nullptr ? stage : "";
+    if (stageName == "unet_cache") {
+      opts.model_path = model_dir_ + "/unet.mnn";
+    } else if (stageName == "vae_dec_cache") {
+      opts.model_path = model_dir_ + "/vae_decoder.mnn";
+    } else if (stageName == "vae_enc_cache") {
+      opts.model_path = model_dir_ + "/vae_encoder.mnn";
+    }
     // Enumeration effort, from the Settings choice (only the OpenCL backend
     // enumerates; Vulkan and CPU ignore it).
     opts.gpu_tuning = mnnTuningFromLevel(req.tuning_level);
