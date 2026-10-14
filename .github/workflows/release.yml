@@ -50,14 +50,14 @@ jobs:
       # The "_LITE" package of the same DDK is the mixmodel half (libhiai plus
       # Caffe/TF adapters) and has no libhiai_ir*/graph headers at all, which is
       # what MNN's backend needs.
-      HIAI_DDK_MIRRORS: |
-        https://github.com/mohuanmo/local-dream/releases/download/hiai-ddk-330/hiai_ddk_lib_330.tar.gz
-        https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_330.tar.gz
-        https://paddlelite-demo.bj.bcebos.com/devices/huawei/kirin/hiai_ddk_lib_510.tar.gz
-        http://cnbj1.fds.api.xiaomi.com/aibench/third_party/HiAI_DDK_100.200.010.011.zip
-      # Printed (and warned about when it differs) rather than enforced: knowing
-      # which revision a build used is the whole point of this experiment.
-      HIAI_DDK_EXPECTED: ""
+      # The HiAI / Kirin NPU backend is deliberately not built. MNN's current
+      # hiai backend needs HiAI newer than a Kirin 810 has (it #includes
+      # native_handle.h, which the 330-generation DDK does not ship), while
+      # building against a newer DDK compiles but makes MNN fault at session
+      # creation on that device. Both directions are dead ends, and the NPU here
+      # is ~1 TOPS with thin op coverage, so nothing was gained by pursuing it.
+      # The app keeps the switch (off by default) and the diagnostics. The DDK
+      # used for the last attempt is still on the hiai-ddk-330 release.
       # tokenizers-cpp's Rust crate trips `dangerous_implicit_autorefs`, which
       # newer rustc denies by default. Pin the toolchain the project's shipped
       # libraries were actually built with (rustc path baked into the .so).
@@ -197,72 +197,6 @@ jobs:
       # to exist in the HiAI runtime on the device, and a runtime older than the
       # DDK (seen as 100.333.020.100 on a Kirin 810 against a 100.600 DDK) makes
       # MNN's hiai backend fault. The package reports its own version below.
-      - name: Download HiAI DDK
-        if: env.REBUILD_NATIVE == 'true'
-        run: |
-          set -e
-          pkg="$RUNNER_TEMP/ddk.pkg"
-          ok=""
-          for url in $HIAI_DDK_MIRRORS; do
-            echo "Trying $url"
-            if curl -fL --retry 2 --retry-delay 3 -A "Mozilla/5.0" --max-time 600 \
-                 "$url" -o "$pkg"; then
-              echo "Downloaded $(du -h "$pkg" | cut -f1) from $url"
-              ok="yes"
-              break
-            fi
-            echo "::warning::download failed, trying the next mirror"
-          done
-          test -n "$ok" || { echo "::error::no HiAI DDK could be downloaded"; exit 1; }
-
-          dir="$RUNNER_TEMP/ddk"
-          mkdir -p "$dir"
-          case "$(file -b "$pkg")" in
-            *Zip*)  unzip -q "$pkg" -d "$dir" ;;
-            *gzip*) tar xzf "$pkg" -C "$dir" ;;
-            *)      echo "::error::unrecognised DDK archive"; exit 1 ;;
-          esac
-
-          # Print what actually arrived. The "_LITE" package is the mixmodel half
-          # and lacks the ir/graph pieces entirely, so a "not found" below is
-          # easier to read next to this listing.
-          echo "Package contains:"; find "$dir" -maxdepth 3 -mindepth 1 -type d | head -20
-
-          # Prefer the 64-bit set when a package ships both ABIs.
-          lib=$(find "$dir" -path '*lib64*' -name libhiai.so | head -1)
-          [ -n "$lib" ] || lib=$(find "$dir" -name libhiai.so | head -1)
-          test -n "$lib" || { echo "::error::libhiai.so not found in the package"; exit 1; }
-          inc=$(find "$dir" -type d -name graph | head -1)
-          test -n "$inc" || {
-            echo "::error::HiAI graph headers not found: this looks like the _LITE (mixmodel) package, which has no ir/graph half"
-            exit 1
-          }
-          for need in libhiai_ir.so libhiai_ir_build.so; do
-            find "$dir" -name "$need" | head -1 | grep -q . || {
-              echo "::error::$need not found: MNN's hiai backend needs the full DDK"
-              exit 1
-            }
-          done
-          libdir="$(dirname "$lib")"
-          incdir="$(dirname "$inc")"
-          echo "Libraries: $libdir"
-          echo "Headers:   $incdir"
-
-          version="$(find "$dir" -name ddk_info -exec sed -n 's/.*"VERSION":"\([^"]*\)".*/\1/p' {} \; | head -1)"
-          echo "DDK package reports: ${version:-unknown}"
-          if [ -n "$HIAI_DDK_EXPECTED" ] && [ "$version" != "$HIAI_DDK_EXPECTED" ]; then
-            echo "::warning::DDK revision is ${version:-unknown}, expected $HIAI_DDK_EXPECTED"
-          fi
-
-          hiai="app/src/main/cpp/3rdparty/MNN/source/backend/hiai/3rdParty"
-          mkdir -p "$hiai/arm64-v8a" "$hiai/include"
-          cp "$libdir"/*.so "$hiai/arm64-v8a/"
-          cp -r "$incdir"/. "$hiai/include/"
-          mkdir -p app/src/main/assets/hiailibs
-          cp "$libdir"/*.so app/src/main/assets/hiailibs/
-          echo "Staged headers:"; ls "$hiai/include" | head -5
-          echo "Staged runtime libraries:"; ls app/src/main/assets/hiailibs
-
       - name: Build libstable_diffusion_core.so
         if: env.REBUILD_NATIVE == 'true'
         run: |
